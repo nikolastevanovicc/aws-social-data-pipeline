@@ -1,0 +1,7 @@
+{
+  "dataset_name": "x-synthetic-seed",
+  "source_type": "synthetic",
+  "generated_by": "team",
+  "created_at": "2026-05-19T00:00:00Z",
+  "schema_note": "Raw dataset for bronze layer; no transformations applied."
+}

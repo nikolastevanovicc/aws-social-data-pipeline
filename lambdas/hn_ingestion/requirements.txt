@@ -1,0 +1,1 @@
+# Keep empty for now; AWS Lambda runtime already provides boto3.
