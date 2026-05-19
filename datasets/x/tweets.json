@@ -1,0 +1,9 @@
+[
+  {
+    "id": "x-1",
+    "username": "demo_user",
+    "text": "Synthetic tweet placeholder for bronze layer.",
+    "created_at": "2026-05-18T10:00:00Z",
+    "followers_count": 120
+  }
+]
