@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# CDK
+cdk.out/
+infrastructure/cdk.out/
+infrastructure/.venv/
+
+# Environment files
+.env
+*.env
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
