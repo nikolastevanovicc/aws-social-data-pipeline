@@ -1,9 +1,1489 @@
 [
   {
-    "id": "x-1",
-    "username": "demo_user",
-    "text": "Synthetic tweet placeholder for bronze layer.",
-    "created_at": "2026-05-18T10:00:00Z",
-    "followers_count": 120
+    "id": "x-2026-0001",
+    "text": "Synthetic market note: bitcoin liquidity looks stronger after weekend volume, but the next move still depends on macro data.",
+    "created_at": "2026-05-20T08:14:22Z",
+    "lang": "en",
+    "source": "X for iPhone",
+    "user": {
+      "id": "u-1001",
+      "username": "block_signal_lab",
+      "display_name": "Block Signal Lab",
+      "followers_count": 184200,
+      "following_count": 812,
+      "verified": true,
+      "created_at": "2018-03-11T16:42:00Z"
+    },
+    "metrics": {
+      "like_count": 438,
+      "retweet_count": 91,
+      "reply_count": 36,
+      "quote_count": 18
+    },
+    "hashtags": [
+      "bitcoin",
+      "crypto",
+      "markets"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0002",
+    "text": "Deploying a small analytics service to AWS today. The boring checklist still wins: IAM boundaries, alarms, tags, backups, and cost budgets.",
+    "created_at": "2026-05-20T08:31:09Z",
+    "lang": "en",
+    "source": "X Web App",
+    "user": {
+      "id": "u-1002",
+      "username": "cloudbuild_notes",
+      "display_name": "Cloud Build Notes",
+      "followers_count": 9650,
+      "following_count": 532,
+      "verified": false,
+      "created_at": "2021-07-24T10:05:00Z"
+    },
+    "metrics": {
+      "like_count": 77,
+      "retweet_count": 14,
+      "reply_count": 9,
+      "quote_count": 3
+    },
+    "hashtags": [
+      "AWS",
+      "cloud",
+      "devops"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0003",
+    "text": "The most useful AI feature in our support dashboard is not a chatbot. It is a clean summary of the last five customer events.",
+    "created_at": "2026-05-20T09:02:44Z",
+    "lang": "en",
+    "source": "X for Android",
+    "user": {
+      "id": "u-1003",
+      "username": "product_ai_ops",
+      "display_name": "Product AI Ops",
+      "followers_count": 42700,
+      "following_count": 1204,
+      "verified": true,
+      "created_at": "2019-11-02T13:18:00Z"
+    },
+    "metrics": {
+      "like_count": 516,
+      "retweet_count": 128,
+      "reply_count": 41,
+      "quote_count": 22
+    },
+    "hashtags": [
+      "AI",
+      "SaaS",
+      "CustomerExperience"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0004",
+    "text": "Synthetic startup update: we cut our cloud bill by 19 percent after moving batch image jobs to spot capacity and adding queue backpressure.",
+    "created_at": "2026-05-20T09:44:13Z",
+    "lang": "en",
+    "source": "Buffer",
+    "user": {
+      "id": "u-1004",
+      "username": "founder_builds",
+      "display_name": "Founder Builds",
+      "followers_count": 58300,
+      "following_count": 768,
+      "verified": false,
+      "created_at": "2020-01-15T09:27:00Z"
+    },
+    "metrics": {
+      "like_count": 219,
+      "retweet_count": 44,
+      "reply_count": 27,
+      "quote_count": 10
+    },
+    "hashtags": [
+      "startup",
+      "cloudcost",
+      "engineering"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0005",
+    "text": "Replying to a demo thread: schema-on-read is the right default for bronze social data because the upstream payload can change without notice.",
+    "created_at": "2026-05-20T10:18:39Z",
+    "lang": "en",
+    "source": "X Web App",
+    "user": {
+      "id": "u-1005",
+      "username": "data_lake_mara",
+      "display_name": "Mara Data Lake",
+      "followers_count": 23100,
+      "following_count": 1108,
+      "verified": false,
+      "created_at": "2017-09-03T07:50:00Z"
+    },
+    "metrics": {
+      "like_count": 142,
+      "retweet_count": 24,
+      "reply_count": 18,
+      "quote_count": 4
+    },
+    "hashtags": [
+      "datalake",
+      "bronze",
+      "analytics"
+    ],
+    "referenced_tweets": [
+      {
+        "type": "replied_to",
+        "id": "x-2026-0002",
+        "author_id": "u-1002",
+        "created_at": "2026-05-20T08:31:09Z"
+      }
+    ]
+  },
+  {
+    "id": "x-2026-0006",
+    "text": "Bitcoin treasury posts are getting more operational. The interesting question is custody process, not the announcement graphic.",
+    "created_at": "2026-05-20T10:51:05Z",
+    "lang": "en",
+    "source": "X for iPhone",
+    "user": {
+      "id": "u-1006",
+      "username": "fintech_radar",
+      "display_name": "Fintech Radar",
+      "followers_count": 312000,
+      "following_count": 1450,
+      "verified": true,
+      "created_at": "2015-06-19T12:40:00Z"
+    },
+    "metrics": {
+      "like_count": 690,
+      "retweet_count": 176,
+      "reply_count": 58,
+      "quote_count": 33
+    },
+    "hashtags": [
+      "bitcoin",
+      "fintech",
+      "treasury"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0007",
+    "text": "A good pull request description should explain the production risk, the rollback path, and the one test that would have failed before.",
+    "created_at": "2026-05-20T11:23:27Z",
+    "lang": "en",
+    "source": "X Web App",
+    "user": {
+      "id": "u-1007",
+      "username": "senior_dev_notes",
+      "display_name": "Senior Dev Notes",
+      "followers_count": 118500,
+      "following_count": 394,
+      "verified": true,
+      "created_at": "2016-04-07T18:03:00Z"
+    },
+    "metrics": {
+      "like_count": 1310,
+      "retweet_count": 402,
+      "reply_count": 74,
+      "quote_count": 65
+    },
+    "hashtags": [
+      "softwareengineering",
+      "codeReview",
+      "testing"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0008",
+    "text": "Synthetic news desk: chip demand for inference workloads is pushing smaller cloud vendors to publish more transparent capacity roadmaps.",
+    "created_at": "2026-05-20T12:05:56Z",
+    "lang": "en",
+    "source": "Sprout Social",
+    "user": {
+      "id": "u-1008",
+      "username": "techwire_daily",
+      "display_name": "TechWire Daily",
+      "followers_count": 725000,
+      "following_count": 620,
+      "verified": true,
+      "created_at": "2012-10-29T14:12:00Z"
+    },
+    "metrics": {
+      "like_count": 2404,
+      "retweet_count": 809,
+      "reply_count": 121,
+      "quote_count": 116
+    },
+    "hashtags": [
+      "technology",
+      "AI",
+      "cloud"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0009",
+    "text": "Retweeting this because raw event retention matters. You cannot rebuild lost source fields after the pipeline quietly drops them.",
+    "created_at": "2026-05-20T12:47:31Z",
+    "lang": "en",
+    "source": "X Web App",
+    "user": {
+      "id": "u-1009",
+      "username": "lakehouse_jules",
+      "display_name": "Jules Lakehouse",
+      "followers_count": 15600,
+      "following_count": 887,
+      "verified": false,
+      "created_at": "2022-02-17T08:22:00Z"
+    },
+    "metrics": {
+      "like_count": 96,
+      "retweet_count": 21,
+      "reply_count": 7,
+      "quote_count": 2
+    },
+    "hashtags": [
+      "dataengineering",
+      "bronze",
+      "rawdata"
+    ],
+    "referenced_tweets": [
+      {
+        "type": "retweeted",
+        "id": "x-2026-0005",
+        "author_id": "u-1005",
+        "created_at": "2026-05-20T10:18:39Z"
+      }
+    ]
+  },
+  {
+    "id": "x-2026-0010",
+    "text": "We shipped a tiny Lambda that writes social payloads to S3 exactly as received. The next lesson is why bronze should stay boring.",
+    "created_at": "2026-05-20T13:20:18Z",
+    "lang": "en",
+    "source": "X for iPhone",
+    "user": {
+      "id": "u-1010",
+      "username": "serverless_kim",
+      "display_name": "Serverless Kim",
+      "followers_count": 67400,
+      "following_count": 1002,
+      "verified": false,
+      "created_at": "2018-08-21T11:35:00Z"
+    },
+    "metrics": {
+      "like_count": 321,
+      "retweet_count": 83,
+      "reply_count": 29,
+      "quote_count": 13
+    },
+    "hashtags": [
+      "AWSLambda",
+      "S3",
+      "serverless"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0011",
+    "text": "Synthetic CTO note: a data contract is useful, but the original payload is still the audit log when product events get disputed.",
+    "created_at": "2026-05-20T14:02:49Z",
+    "lang": "en",
+    "source": "X Web App",
+    "user": {
+      "id": "u-1011",
+      "username": "cto_lena",
+      "display_name": "Lena, CTO",
+      "followers_count": 90500,
+      "following_count": 611,
+      "verified": true,
+      "created_at": "2014-12-05T15:48:00Z"
+    },
+    "metrics": {
+      "like_count": 482,
+      "retweet_count": 112,
+      "reply_count": 34,
+      "quote_count": 21
+    },
+    "hashtags": [
+      "datacontracts",
+      "platform",
+      "engineering"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0012",
+    "text": "AI coding assistants are strongest when the repo has clear tests, small modules, and boring build commands. Context quality compounds.",
+    "created_at": "2026-05-20T14:44:03Z",
+    "lang": "en",
+    "source": "X for Android",
+    "user": {
+      "id": "u-1012",
+      "username": "devtools_ryan",
+      "display_name": "Ryan DevTools",
+      "followers_count": 38400,
+      "following_count": 1498,
+      "verified": false,
+      "created_at": "2019-02-14T20:01:00Z"
+    },
+    "metrics": {
+      "like_count": 284,
+      "retweet_count": 69,
+      "reply_count": 31,
+      "quote_count": 12
+    },
+    "hashtags": [
+      "AI",
+      "devtools",
+      "softwareengineering"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0013",
+    "text": "Quote from a synthetic cloud thread: managed databases are not expensive compared with losing a weekend to broken failover.",
+    "created_at": "2026-05-20T15:19:27Z",
+    "lang": "en",
+    "source": "TweetDeck",
+    "user": {
+      "id": "u-1013",
+      "username": "ops_postmortems",
+      "display_name": "Ops Postmortems",
+      "followers_count": 209000,
+      "following_count": 352,
+      "verified": true,
+      "created_at": "2013-05-08T06:17:00Z"
+    },
+    "metrics": {
+      "like_count": 911,
+      "retweet_count": 231,
+      "reply_count": 53,
+      "quote_count": 44
+    },
+    "hashtags": [
+      "AWS",
+      "databases",
+      "reliability"
+    ],
+    "referenced_tweets": [
+      {
+        "type": "quoted",
+        "id": "x-2026-0002",
+        "author_id": "u-1002",
+        "created_at": "2026-05-20T08:31:09Z",
+        "text": "Deploying a small analytics service to AWS today."
+      }
+    ]
+  },
+  {
+    "id": "x-2026-0014",
+    "text": "Synthetic startup hiring signal: teams are asking for people who can debug product metrics and Terraform in the same afternoon.",
+    "created_at": "2026-05-20T16:06:40Z",
+    "lang": "en",
+    "source": "X Web App",
+    "user": {
+      "id": "u-1014",
+      "username": "startup_scope",
+      "display_name": "Startup Scope",
+      "followers_count": 51400,
+      "following_count": 920,
+      "verified": false,
+      "created_at": "2020-09-28T09:14:00Z"
+    },
+    "metrics": {
+      "like_count": 188,
+      "retweet_count": 37,
+      "reply_count": 22,
+      "quote_count": 8
+    },
+    "hashtags": [
+      "startup",
+      "hiring",
+      "cloud"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0015",
+    "text": "For bitcoin analytics, separating exchange flow from wallet churn is the difference between a useful signal and a colorful chart.",
+    "created_at": "2026-05-20T16:55:12Z",
+    "lang": "en",
+    "source": "X for iPhone",
+    "user": {
+      "id": "u-1015",
+      "username": "chain_metrics_io",
+      "display_name": "Chain Metrics IO",
+      "followers_count": 448000,
+      "following_count": 701,
+      "verified": true,
+      "created_at": "2016-01-22T04:31:00Z"
+    },
+    "metrics": {
+      "like_count": 1530,
+      "retweet_count": 497,
+      "reply_count": 89,
+      "quote_count": 74
+    },
+    "hashtags": [
+      "bitcoin",
+      "analytics",
+      "onchain"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0016",
+    "text": "The best AWS architecture diagram for a demo is the one that matches the IAM policy, not the one with the most arrows.",
+    "created_at": "2026-05-20T17:33:08Z",
+    "lang": "en",
+    "source": "X Web App",
+    "user": {
+      "id": "u-1016",
+      "username": "diagram_to_prod",
+      "display_name": "Diagram to Prod",
+      "followers_count": 17800,
+      "following_count": 640,
+      "verified": false,
+      "created_at": "2021-03-18T21:11:00Z"
+    },
+    "metrics": {
+      "like_count": 121,
+      "retweet_count": 33,
+      "reply_count": 14,
+      "quote_count": 5
+    },
+    "hashtags": [
+      "AWS",
+      "architecture",
+      "IAM"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0017",
+    "text": "Replying here: raw JSON in bronze is not a shortcut. It is the place where you preserve the source record before opinions enter the pipeline.",
+    "created_at": "2026-05-20T18:09:50Z",
+    "lang": "en",
+    "source": "X for Android",
+    "user": {
+      "id": "u-1017",
+      "username": "etl_pragmatist",
+      "display_name": "ETL Pragmatist",
+      "followers_count": 29600,
+      "following_count": 833,
+      "verified": false,
+      "created_at": "2018-10-10T17:09:00Z"
+    },
+    "metrics": {
+      "like_count": 204,
+      "retweet_count": 52,
+      "reply_count": 19,
+      "quote_count": 7
+    },
+    "hashtags": [
+      "ETL",
+      "bronze",
+      "json"
+    ],
+    "referenced_tweets": [
+      {
+        "type": "replied_to",
+        "id": "x-2026-0009",
+        "author_id": "u-1009",
+        "created_at": "2026-05-20T12:47:31Z"
+      }
+    ]
+  },
+  {
+    "id": "x-2026-0018",
+    "text": "Synthetic AI infra note: vector search cost becomes easier to manage once retention rules are explicit and embeddings have owners.",
+    "created_at": "2026-05-21T07:12:16Z",
+    "lang": "en",
+    "source": "Hootsuite",
+    "user": {
+      "id": "u-1018",
+      "username": "vector_ops",
+      "display_name": "Vector Ops",
+      "followers_count": 73500,
+      "following_count": 1041,
+      "verified": true,
+      "created_at": "2020-06-30T12:25:00Z"
+    },
+    "metrics": {
+      "like_count": 398,
+      "retweet_count": 105,
+      "reply_count": 28,
+      "quote_count": 17
+    },
+    "hashtags": [
+      "AI",
+      "vectors",
+      "infrastructure"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0019",
+    "text": "A small team can look bigger than it is by having excellent observability and a very short incident review loop.",
+    "created_at": "2026-05-21T07:58:41Z",
+    "lang": "en",
+    "source": "X Web App",
+    "user": {
+      "id": "u-1019",
+      "username": "sre_lessons",
+      "display_name": "SRE Lessons",
+      "followers_count": 132000,
+      "following_count": 488,
+      "verified": true,
+      "created_at": "2015-03-04T19:36:00Z"
+    },
+    "metrics": {
+      "like_count": 864,
+      "retweet_count": 244,
+      "reply_count": 62,
+      "quote_count": 31
+    },
+    "hashtags": [
+      "SRE",
+      "observability",
+      "startups"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0020",
+    "text": "Synthetic beta feedback: our users do not want more dashboards. They want the one number that tells them whether to investigate.",
+    "created_at": "2026-05-21T08:36:03Z",
+    "lang": "en",
+    "source": "X for iPhone",
+    "user": {
+      "id": "u-1020",
+      "username": "metric_minimalist",
+      "display_name": "Metric Minimalist",
+      "followers_count": 7800,
+      "following_count": 713,
+      "verified": false,
+      "created_at": "2022-12-12T11:43:00Z"
+    },
+    "metrics": {
+      "like_count": 66,
+      "retweet_count": 12,
+      "reply_count": 11,
+      "quote_count": 2
+    },
+    "hashtags": [
+      "SaaS",
+      "analytics",
+      "product"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0021",
+    "text": "Bitcoin developers quietly improving wallet UX may matter more for adoption than another dramatic price prediction.",
+    "created_at": "2026-05-21T09:10:25Z",
+    "lang": "en",
+    "source": "X for Android",
+    "user": {
+      "id": "u-1021",
+      "username": "wallet_research",
+      "display_name": "Wallet Research",
+      "followers_count": 64100,
+      "following_count": 990,
+      "verified": false,
+      "created_at": "2019-08-09T05:28:00Z"
+    },
+    "metrics": {
+      "like_count": 341,
+      "retweet_count": 85,
+      "reply_count": 37,
+      "quote_count": 16
+    },
+    "hashtags": [
+      "bitcoin",
+      "UX",
+      "opensource"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0022",
+    "text": "Our synthetic workload test found the boring bottleneck: one oversized JSON object was making downstream previews painfully slow.",
+    "created_at": "2026-05-21T09:48:59Z",
+    "lang": "en",
+    "source": "X Web App",
+    "user": {
+      "id": "u-1022",
+      "username": "pipeline_debugger",
+      "display_name": "Pipeline Debugger",
+      "followers_count": 19400,
+      "following_count": 577,
+      "verified": false,
+      "created_at": "2020-04-02T14:15:00Z"
+    },
+    "metrics": {
+      "like_count": 157,
+      "retweet_count": 41,
+      "reply_count": 24,
+      "quote_count": 6
+    },
+    "hashtags": [
+      "dataengineering",
+      "json",
+      "performance"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0023",
+    "text": "Retweet for later: cloud migrations fail when teams move servers first and operating habits last.",
+    "created_at": "2026-05-21T10:27:33Z",
+    "lang": "en",
+    "source": "X Web App",
+    "user": {
+      "id": "u-1023",
+      "username": "migration_map",
+      "display_name": "Migration Map",
+      "followers_count": 33700,
+      "following_count": 803,
+      "verified": false,
+      "created_at": "2017-11-20T16:58:00Z"
+    },
+    "metrics": {
+      "like_count": 112,
+      "retweet_count": 28,
+      "reply_count": 12,
+      "quote_count": 4
+    },
+    "hashtags": [
+      "cloud",
+      "migration",
+      "AWS"
+    ],
+    "referenced_tweets": [
+      {
+        "type": "retweeted",
+        "id": "x-2026-0019",
+        "author_id": "u-1019",
+        "created_at": "2026-05-21T07:58:41Z"
+      }
+    ]
+  },
+  {
+    "id": "x-2026-0024",
+    "text": "Synthetic tech news: enterprise buyers are asking AI vendors for audit trails before bigger model quality claims.",
+    "created_at": "2026-05-21T11:03:18Z",
+    "lang": "en",
+    "source": "SocialFlow",
+    "user": {
+      "id": "u-1024",
+      "username": "enterprise_tech_now",
+      "display_name": "Enterprise Tech Now",
+      "followers_count": 538000,
+      "following_count": 742,
+      "verified": true,
+      "created_at": "2011-09-16T08:03:00Z"
+    },
+    "metrics": {
+      "like_count": 1765,
+      "retweet_count": 544,
+      "reply_count": 98,
+      "quote_count": 87
+    },
+    "hashtags": [
+      "AI",
+      "enterprise",
+      "technology"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0025",
+    "text": "A useful startup metric: how many customer questions can engineering answer from logs without opening a database console.",
+    "created_at": "2026-05-21T11:42:07Z",
+    "lang": "en",
+    "source": "X for iPhone",
+    "user": {
+      "id": "u-1025",
+      "username": "saas_founder_ana",
+      "display_name": "Ana SaaS Founder",
+      "followers_count": 27600,
+      "following_count": 1290,
+      "verified": false,
+      "created_at": "2021-01-05T12:19:00Z"
+    },
+    "metrics": {
+      "like_count": 198,
+      "retweet_count": 46,
+      "reply_count": 21,
+      "quote_count": 9
+    },
+    "hashtags": [
+      "startup",
+      "observability",
+      "SaaS"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0026",
+    "text": "Quote from our synthetic AWS demo: S3 partition naming looks small until Athena scans yesterday's mistake for the next year.",
+    "created_at": "2026-05-21T12:18:46Z",
+    "lang": "en",
+    "source": "X Web App",
+    "user": {
+      "id": "u-1026",
+      "username": "athena_tuner",
+      "display_name": "Athena Tuner",
+      "followers_count": 46300,
+      "following_count": 501,
+      "verified": false,
+      "created_at": "2018-12-13T10:30:00Z"
+    },
+    "metrics": {
+      "like_count": 256,
+      "retweet_count": 73,
+      "reply_count": 20,
+      "quote_count": 12
+    },
+    "hashtags": [
+      "S3",
+      "Athena",
+      "AWS"
+    ],
+    "referenced_tweets": [
+      {
+        "type": "quoted",
+        "id": "x-2026-0010",
+        "author_id": "u-1010",
+        "created_at": "2026-05-20T13:20:18Z",
+        "text": "We shipped a tiny Lambda that writes social payloads to S3 exactly as received."
+      }
+    ]
+  },
+  {
+    "id": "x-2026-0027",
+    "text": "The AI agent benchmark I want: can it read a half-documented repo, run the tests, and change one thing without touching unrelated files.",
+    "created_at": "2026-05-21T13:05:11Z",
+    "lang": "en",
+    "source": "X Web App",
+    "user": {
+      "id": "u-1027",
+      "username": "repo_realist",
+      "display_name": "Repo Realist",
+      "followers_count": 88900,
+      "following_count": 674,
+      "verified": true,
+      "created_at": "2016-07-27T22:44:00Z"
+    },
+    "metrics": {
+      "like_count": 1044,
+      "retweet_count": 318,
+      "reply_count": 77,
+      "quote_count": 49
+    },
+    "hashtags": [
+      "AI",
+      "softwareengineering",
+      "devtools"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0028",
+    "text": "Synthetic exchange note: bitcoin volatility is easier to explain to new users when you show liquidity bands instead of candles alone.",
+    "created_at": "2026-05-21T13:49:52Z",
+    "lang": "en",
+    "source": "X for iPhone",
+    "user": {
+      "id": "u-1028",
+      "username": "exchange_ux",
+      "display_name": "Exchange UX",
+      "followers_count": 124000,
+      "following_count": 936,
+      "verified": true,
+      "created_at": "2017-02-01T07:07:00Z"
+    },
+    "metrics": {
+      "like_count": 712,
+      "retweet_count": 184,
+      "reply_count": 59,
+      "quote_count": 26
+    },
+    "hashtags": [
+      "bitcoin",
+      "trading",
+      "UX"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0029",
+    "text": "Replying to the thread: the gold layer should answer a business question, not mirror every raw field with a nicer column name.",
+    "created_at": "2026-05-21T14:33:20Z",
+    "lang": "en",
+    "source": "X for Android",
+    "user": {
+      "id": "u-1029",
+      "username": "warehouse_care",
+      "display_name": "Warehouse Care",
+      "followers_count": 24700,
+      "following_count": 1155,
+      "verified": false,
+      "created_at": "2019-05-21T18:26:00Z"
+    },
+    "metrics": {
+      "like_count": 174,
+      "retweet_count": 39,
+      "reply_count": 16,
+      "quote_count": 6
+    },
+    "hashtags": [
+      "goldlayer",
+      "analytics",
+      "data"
+    ],
+    "referenced_tweets": [
+      {
+        "type": "replied_to",
+        "id": "x-2026-0017",
+        "author_id": "u-1017",
+        "created_at": "2026-05-20T18:09:50Z"
+      }
+    ]
+  },
+  {
+    "id": "x-2026-0030",
+    "text": "Synthetic cloud budget alert: idle development databases cost less than a rewrite, but more than a scheduled stop policy.",
+    "created_at": "2026-05-21T15:12:36Z",
+    "lang": "en",
+    "source": "Buffer",
+    "user": {
+      "id": "u-1030",
+      "username": "cost_guardrails",
+      "display_name": "Cost Guardrails",
+      "followers_count": 56200,
+      "following_count": 410,
+      "verified": false,
+      "created_at": "2020-10-31T09:55:00Z"
+    },
+    "metrics": {
+      "like_count": 303,
+      "retweet_count": 88,
+      "reply_count": 25,
+      "quote_count": 14
+    },
+    "hashtags": [
+      "cloudcost",
+      "FinOps",
+      "AWS"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0031",
+    "text": "Technology news moves fast, but the durable story is teams turning AI pilots into audited workflows with owners and limits.",
+    "created_at": "2026-05-22T07:22:08Z",
+    "lang": "en",
+    "source": "Sprout Social",
+    "user": {
+      "id": "u-1031",
+      "username": "tech_strategy_feed",
+      "display_name": "Tech Strategy Feed",
+      "followers_count": 267000,
+      "following_count": 850,
+      "verified": true,
+      "created_at": "2014-01-18T13:02:00Z"
+    },
+    "metrics": {
+      "like_count": 1105,
+      "retweet_count": 351,
+      "reply_count": 66,
+      "quote_count": 52
+    },
+    "hashtags": [
+      "technology",
+      "AI",
+      "governance"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0032",
+    "text": "The quickest way to improve a demo pipeline is to make every generated record look like something the real source might send.",
+    "created_at": "2026-05-22T08:01:47Z",
+    "lang": "en",
+    "source": "X Web App",
+    "user": {
+      "id": "u-1032",
+      "username": "demo_data_lab",
+      "display_name": "Demo Data Lab",
+      "followers_count": 12800,
+      "following_count": 609,
+      "verified": false,
+      "created_at": "2022-04-25T15:33:00Z"
+    },
+    "metrics": {
+      "like_count": 119,
+      "retweet_count": 26,
+      "reply_count": 15,
+      "quote_count": 5
+    },
+    "hashtags": [
+      "syntheticdata",
+      "pipeline",
+      "json"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0033",
+    "text": "Retweet: the best startup infra choice is the one your smallest on-call rotation can understand at 02:00.",
+    "created_at": "2026-05-22T08:42:19Z",
+    "lang": "en",
+    "source": "X for iPhone",
+    "user": {
+      "id": "u-1033",
+      "username": "oncall_founder",
+      "display_name": "Oncall Founder",
+      "followers_count": 39800,
+      "following_count": 1007,
+      "verified": false,
+      "created_at": "2018-01-30T05:20:00Z"
+    },
+    "metrics": {
+      "like_count": 233,
+      "retweet_count": 65,
+      "reply_count": 18,
+      "quote_count": 11
+    },
+    "hashtags": [
+      "startup",
+      "reliability",
+      "cloud"
+    ],
+    "referenced_tweets": [
+      {
+        "type": "retweeted",
+        "id": "x-2026-0019",
+        "author_id": "u-1019",
+        "created_at": "2026-05-21T07:58:41Z"
+      }
+    ]
+  },
+  {
+    "id": "x-2026-0034",
+    "text": "Synthetic Bitcoin education note: explain private keys before price targets. Security literacy is still the adoption bottleneck.",
+    "created_at": "2026-05-22T09:26:51Z",
+    "lang": "en",
+    "source": "X Web App",
+    "user": {
+      "id": "u-1034",
+      "username": "self_custody_school",
+      "display_name": "Self Custody School",
+      "followers_count": 85400,
+      "following_count": 559,
+      "verified": true,
+      "created_at": "2016-09-14T10:41:00Z"
+    },
+    "metrics": {
+      "like_count": 608,
+      "retweet_count": 173,
+      "reply_count": 44,
+      "quote_count": 23
+    },
+    "hashtags": [
+      "bitcoin",
+      "security",
+      "education"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0035",
+    "text": "A clean event name, a timestamp, and the raw payload will outperform a clever transformation nobody can explain next quarter.",
+    "created_at": "2026-05-22T10:08:02Z",
+    "lang": "en",
+    "source": "X for Android",
+    "user": {
+      "id": "u-1035",
+      "username": "event_modeler",
+      "display_name": "Event Modeler",
+      "followers_count": 44100,
+      "following_count": 734,
+      "verified": false,
+      "created_at": "2017-04-11T22:06:00Z"
+    },
+    "metrics": {
+      "like_count": 350,
+      "retweet_count": 92,
+      "reply_count": 30,
+      "quote_count": 13
+    },
+    "hashtags": [
+      "eventdata",
+      "analytics",
+      "engineering"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0036",
+    "text": "Synthetic AWS learning tip: turn on CloudTrail early in the project, before you need to explain who changed a bucket policy.",
+    "created_at": "2026-05-22T10:51:37Z",
+    "lang": "en",
+    "source": "X Web App",
+    "user": {
+      "id": "u-1036",
+      "username": "aws_classroom",
+      "display_name": "AWS Classroom",
+      "followers_count": 71900,
+      "following_count": 680,
+      "verified": true,
+      "created_at": "2015-08-24T12:50:00Z"
+    },
+    "metrics": {
+      "like_count": 522,
+      "retweet_count": 149,
+      "reply_count": 38,
+      "quote_count": 20
+    },
+    "hashtags": [
+      "AWS",
+      "CloudTrail",
+      "security"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0037",
+    "text": "Quote tweet for the data team: if you deduplicate before storing bronze, you also delete evidence of source behavior.",
+    "created_at": "2026-05-22T11:37:44Z",
+    "lang": "en",
+    "source": "TweetDeck",
+    "user": {
+      "id": "u-1037",
+      "username": "raw_first_data",
+      "display_name": "Raw First Data",
+      "followers_count": 102000,
+      "following_count": 477,
+      "verified": true,
+      "created_at": "2013-12-02T16:16:00Z"
+    },
+    "metrics": {
+      "like_count": 702,
+      "retweet_count": 211,
+      "reply_count": 47,
+      "quote_count": 34
+    },
+    "hashtags": [
+      "bronze",
+      "datalake",
+      "deduplication"
+    ],
+    "referenced_tweets": [
+      {
+        "type": "quoted",
+        "id": "x-2026-0032",
+        "author_id": "u-1032",
+        "created_at": "2026-05-22T08:01:47Z",
+        "text": "The quickest way to improve a demo pipeline is to make every generated record look like something the real source might send."
+      }
+    ]
+  },
+  {
+    "id": "x-2026-0038",
+    "text": "AI product teams keep rediscovering that eval data is a product asset. Treat it like one: version it, review it, and keep provenance.",
+    "created_at": "2026-05-22T12:14:23Z",
+    "lang": "en",
+    "source": "X Web App",
+    "user": {
+      "id": "u-1038",
+      "username": "evals_engineer",
+      "display_name": "Evals Engineer",
+      "followers_count": 58600,
+      "following_count": 1077,
+      "verified": false,
+      "created_at": "2020-02-26T18:18:00Z"
+    },
+    "metrics": {
+      "like_count": 411,
+      "retweet_count": 126,
+      "reply_count": 33,
+      "quote_count": 19
+    },
+    "hashtags": [
+      "AI",
+      "evals",
+      "product"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0039",
+    "text": "Synthetic market wrap: bitcoin posts spiked after a quiet price move, while cloud and AI threads drove steadier engagement all day.",
+    "created_at": "2026-05-22T13:03:55Z",
+    "lang": "en",
+    "source": "SocialFlow",
+    "user": {
+      "id": "u-1039",
+      "username": "social_signal_news",
+      "display_name": "Social Signal News",
+      "followers_count": 396000,
+      "following_count": 905,
+      "verified": true,
+      "created_at": "2012-06-04T07:45:00Z"
+    },
+    "metrics": {
+      "like_count": 1450,
+      "retweet_count": 403,
+      "reply_count": 82,
+      "quote_count": 61
+    },
+    "hashtags": [
+      "bitcoin",
+      "AI",
+      "technology"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0040",
+    "text": "Replying to a startup thread: avoid custom auth until you can describe exactly what the standard provider cannot do.",
+    "created_at": "2026-05-22T13:45:10Z",
+    "lang": "en",
+    "source": "X for iPhone",
+    "user": {
+      "id": "u-1040",
+      "username": "auth_before_scale",
+      "display_name": "Auth Before Scale",
+      "followers_count": 21300,
+      "following_count": 812,
+      "verified": false,
+      "created_at": "2021-06-08T09:09:00Z"
+    },
+    "metrics": {
+      "like_count": 151,
+      "retweet_count": 34,
+      "reply_count": 17,
+      "quote_count": 5
+    },
+    "hashtags": [
+      "startup",
+      "security",
+      "softwareengineering"
+    ],
+    "referenced_tweets": [
+      {
+        "type": "replied_to",
+        "id": "x-2026-0025",
+        "author_id": "u-1025",
+        "created_at": "2026-05-21T11:42:07Z"
+      }
+    ]
+  },
+  {
+    "id": "x-2026-0041",
+    "text": "Synthetic cloud lab: a failed deployment taught more than a perfect slide because the logs showed every assumption in order.",
+    "created_at": "2026-05-22T14:26:48Z",
+    "lang": "en",
+    "source": "X Web App",
+    "user": {
+      "id": "u-1041",
+      "username": "cloud_lab_notes",
+      "display_name": "Cloud Lab Notes",
+      "followers_count": 16600,
+      "following_count": 534,
+      "verified": false,
+      "created_at": "2022-01-19T13:31:00Z"
+    },
+    "metrics": {
+      "like_count": 93,
+      "retweet_count": 22,
+      "reply_count": 10,
+      "quote_count": 3
+    },
+    "hashtags": [
+      "cloud",
+      "learning",
+      "devops"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0042",
+    "text": "The useful abstraction in software engineering is the one that removes a decision from every caller without hiding operational cost.",
+    "created_at": "2026-05-22T15:11:04Z",
+    "lang": "en",
+    "source": "X for Android",
+    "user": {
+      "id": "u-1042",
+      "username": "abstraction_notes",
+      "display_name": "Abstraction Notes",
+      "followers_count": 97300,
+      "following_count": 388,
+      "verified": true,
+      "created_at": "2014-07-03T20:23:00Z"
+    },
+    "metrics": {
+      "like_count": 801,
+      "retweet_count": 236,
+      "reply_count": 54,
+      "quote_count": 38
+    },
+    "hashtags": [
+      "softwareengineering",
+      "architecture",
+      "design"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0043",
+    "text": "Retweeting this AWS note for students: permissions problems are easier when every role name says what workload owns it.",
+    "created_at": "2026-05-22T15:58:32Z",
+    "lang": "en",
+    "source": "X Web App",
+    "user": {
+      "id": "u-1043",
+      "username": "iam_workshop",
+      "display_name": "IAM Workshop",
+      "followers_count": 34200,
+      "following_count": 642,
+      "verified": false,
+      "created_at": "2019-10-12T06:55:00Z"
+    },
+    "metrics": {
+      "like_count": 247,
+      "retweet_count": 71,
+      "reply_count": 19,
+      "quote_count": 8
+    },
+    "hashtags": [
+      "AWS",
+      "IAM",
+      "security"
+    ],
+    "referenced_tweets": [
+      {
+        "type": "retweeted",
+        "id": "x-2026-0036",
+        "author_id": "u-1036",
+        "created_at": "2026-05-22T10:51:37Z"
+      }
+    ]
+  },
+  {
+    "id": "x-2026-0044",
+    "text": "Synthetic AI startup update: we paused a feature launch because the model answer was good, but the citation path was not explainable.",
+    "created_at": "2026-05-22T16:39:45Z",
+    "lang": "en",
+    "source": "X for iPhone",
+    "user": {
+      "id": "u-1044",
+      "username": "citation_first",
+      "display_name": "Citation First",
+      "followers_count": 28600,
+      "following_count": 1176,
+      "verified": false,
+      "created_at": "2021-09-01T14:04:00Z"
+    },
+    "metrics": {
+      "like_count": 275,
+      "retweet_count": 78,
+      "reply_count": 31,
+      "quote_count": 14
+    },
+    "hashtags": [
+      "AI",
+      "startup",
+      "trust"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0045",
+    "text": "Bitcoin mining threads are more useful when they include energy contracts, hardware age, and location context in the same post.",
+    "created_at": "2026-05-22T17:22:17Z",
+    "lang": "en",
+    "source": "X Web App",
+    "user": {
+      "id": "u-1045",
+      "username": "mining_context",
+      "display_name": "Mining Context",
+      "followers_count": 113000,
+      "following_count": 577,
+      "verified": true,
+      "created_at": "2015-11-17T03:12:00Z"
+    },
+    "metrics": {
+      "like_count": 684,
+      "retweet_count": 190,
+      "reply_count": 49,
+      "quote_count": 25
+    },
+    "hashtags": [
+      "bitcoin",
+      "mining",
+      "energy"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0046",
+    "text": "Synthetic data point: posts with concrete AWS service names outperformed generic cloud posts in the classroom demo engagement sample.",
+    "created_at": "2026-05-23T08:07:29Z",
+    "lang": "en",
+    "source": "X Web App",
+    "user": {
+      "id": "u-1046",
+      "username": "classroom_metrics",
+      "display_name": "Classroom Metrics",
+      "followers_count": 5900,
+      "following_count": 455,
+      "verified": false,
+      "created_at": "2023-03-06T10:17:00Z"
+    },
+    "metrics": {
+      "like_count": 48,
+      "retweet_count": 9,
+      "reply_count": 6,
+      "quote_count": 1
+    },
+    "hashtags": [
+      "syntheticdata",
+      "AWS",
+      "analytics"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0047",
+    "text": "The difference between a hackathon AI demo and a production feature is usually permissions, monitoring, fallback behavior, and billing.",
+    "created_at": "2026-05-23T08:46:58Z",
+    "lang": "en",
+    "source": "X for Android",
+    "user": {
+      "id": "u-1047",
+      "username": "prod_ai_checklist",
+      "display_name": "Prod AI Checklist",
+      "followers_count": 77700,
+      "following_count": 836,
+      "verified": true,
+      "created_at": "2018-05-30T11:52:00Z"
+    },
+    "metrics": {
+      "like_count": 739,
+      "retweet_count": 220,
+      "reply_count": 57,
+      "quote_count": 29
+    },
+    "hashtags": [
+      "AI",
+      "production",
+      "cloud"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0048",
+    "text": "Replying here because it matters: bronze ingestion should fail loudly on invalid JSON, but it should not reshape valid source records.",
+    "created_at": "2026-05-23T09:34:14Z",
+    "lang": "en",
+    "source": "X Web App",
+    "user": {
+      "id": "u-1048",
+      "username": "json_contracts",
+      "display_name": "JSON Contracts",
+      "followers_count": 22200,
+      "following_count": 703,
+      "verified": false,
+      "created_at": "2020-08-18T19:35:00Z"
+    },
+    "metrics": {
+      "like_count": 186,
+      "retweet_count": 50,
+      "reply_count": 20,
+      "quote_count": 7
+    },
+    "hashtags": [
+      "json",
+      "bronze",
+      "dataengineering"
+    ],
+    "referenced_tweets": [
+      {
+        "type": "replied_to",
+        "id": "x-2026-0037",
+        "author_id": "u-1037",
+        "created_at": "2026-05-22T11:37:44Z"
+      }
+    ]
+  },
+  {
+    "id": "x-2026-0049",
+    "text": "Synthetic technology news brief: more devtool startups are bundling hosted sandboxes because local setup remains a conversion killer.",
+    "created_at": "2026-05-23T10:19:03Z",
+    "lang": "en",
+    "source": "SocialFlow",
+    "user": {
+      "id": "u-1049",
+      "username": "devtool_brief",
+      "display_name": "DevTool Brief",
+      "followers_count": 151000,
+      "following_count": 690,
+      "verified": true,
+      "created_at": "2016-02-23T07:56:00Z"
+    },
+    "metrics": {
+      "like_count": 902,
+      "retweet_count": 261,
+      "reply_count": 45,
+      "quote_count": 33
+    },
+    "hashtags": [
+      "devtools",
+      "startup",
+      "technology"
+    ],
+    "referenced_tweets": []
+  },
+  {
+    "id": "x-2026-0050",
+    "text": "Final synthetic seed record: raw social data is messy on purpose here so the bronze layer can demonstrate faithful capture before curation.",
+    "created_at": "2026-05-23T11:02:40Z",
+    "lang": "en",
+    "source": "X for iPhone",
+    "user": {
+      "id": "u-1050",
+      "username": "bronze_layer_demo",
+      "display_name": "Bronze Layer Demo",
+      "followers_count": 12200,
+      "following_count": 504,
+      "verified": false,
+      "created_at": "2023-01-10T08:48:00Z"
+    },
+    "metrics": {
+      "like_count": 134,
+      "retweet_count": 32,
+      "reply_count": 13,
+      "quote_count": 4
+    },
+    "hashtags": [
+      "bronze",
+      "syntheticdata",
+      "pipeline"
+    ],
+    "referenced_tweets": []
   }
 ]
