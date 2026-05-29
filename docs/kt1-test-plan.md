@@ -13,6 +13,29 @@
 - Invoke sa `{}` koristi prethodni dan u UTC.
 - CloudWatch log stream postoji za Lambda funkciju.
 
+## X/Twitter dataset tests
+
+- `datasets/x/tweets.json` je validan JSON.
+- `datasets/x/metadata.json` je validan JSON.
+- `datasets/x/tweets.json` sadrzi tacno `50` zapisa.
+- `metadata.json` polje `record_count` se poklapa sa brojem tweet zapisa.
+- Upload skripta se kompajlira:
+```bash
+python -m py_compile scripts/upload_x_dataset.py
+```
+- Dry-run upload skripte prolazi bez greske:
+```bash
+python scripts/upload_x_dataset.py --bucket test-bucket-name --dry-run
+```
+- Dry-run ispisuje ocekivani S3 prefix:
+```text
+bronze/x/ingest_date=YYYY-MM-DD/dataset_name=x-synthetic-seed/
+```
+- Stvarni upload se moze provjeriti komandom:
+```bash
+aws s3 ls s3://<bucket-name>/bronze/x/ --recursive
+```
+
 ## Security checks
 
 - Nema `AdministratorAccess`.
