@@ -1,7 +1,8 @@
+from pathlib import Path
+
 from aws_cdk import (
     CfnOutput,
     Duration,
-    RemovalPolicy,
     Stack,
     aws_events as events,
     aws_events_targets as targets,
@@ -10,24 +11,19 @@ from aws_cdk import (
     aws_s3 as s3,
 )
 from constructs import Construct
-from pathlib import Path
 
 
-class InfrastructureStack(Stack):
+class BronzeStack(Stack):
 
-    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    def __init__(
+        self,
+        scope: Construct,
+        construct_id: str,
+        *,
+        data_lake_bucket: s3.IBucket,
+        **kwargs,
+    ) -> None:
         super().__init__(scope, construct_id, **kwargs)
-
-        data_lake_bucket = s3.Bucket(
-            self,
-            "SocialMediaDataLakeBucket",
-            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
-            encryption=s3.BucketEncryption.S3_MANAGED,
-            enforce_ssl=True,
-            versioned=True,
-            removal_policy=RemovalPolicy.DESTROY,
-            auto_delete_objects=True,
-        )
 
         lambda_role = iam.Role(
             self,
@@ -83,11 +79,6 @@ class InfrastructureStack(Stack):
             targets=[targets.LambdaFunction(hn_ingestion_lambda)],
         )
 
-        CfnOutput(
-            self,
-            "DataLakeBucketName",
-            value=data_lake_bucket.bucket_name,
-        )
         CfnOutput(
             self,
             "HackerNewsLambdaName",
