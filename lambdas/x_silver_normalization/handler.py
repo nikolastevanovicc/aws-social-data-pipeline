@@ -16,7 +16,7 @@ def utc_now_iso():
 
 
 def get_s3_client():
-    import boto3
+    import boto3 # type: ignore[import-not-found]
 
     return boto3.client("s3")
 
@@ -501,6 +501,61 @@ def normalize_x_dataset(tweets, data_date, ingest_date, processed_at_utc):
     }
 
 
+def write_parquet_table(
+    bucket,
+    silver_prefix,
+    table_name,
+    rows,
+    partition_cols,
+    mode="overwrite_partitions",
+):
+    normalized_silver_prefix = silver_prefix.strip("/")
+    prefix_path = (
+        f"{normalized_silver_prefix}/" if normalized_silver_prefix else ""
+    )
+    s3_path = f"s3://{bucket}/{prefix_path}{table_name}/"
+    row_count = len(rows)
+
+    if not rows:
+        return {"row_count": row_count, "s3_path": s3_path, "written": False}
+
+    import awswrangler as wr
+    import pandas as pd
+
+    df = pd.DataFrame(rows)
+    wr.s3.to_parquet(
+        df=df,
+        path=s3_path,
+        dataset=True,
+        mode=mode,
+        partition_cols=partition_cols,
+    )
+    return {"row_count": row_count, "s3_path": s3_path, "written": True}
+
+
+def write_x_silver_tables(
+    bucket, silver_prefix, normalized_tables, mode="overwrite_partitions"
+):
+    partition_columns = {
+        "users": ["platform"],
+        "posts": ["platform", "year", "month", "day"],
+        "post_tags": ["platform", "year", "month", "day"],
+        "post_relations": ["platform", "year", "month", "day"],
+    }
+
+    return {
+        table_name: write_parquet_table(
+            bucket,
+            silver_prefix,
+            table_name,
+            normalized_tables.get(table_name, []),
+            table_partition_columns,
+            mode=mode,
+        )
+        for table_name, table_partition_columns in partition_columns.items()
+    }
+
+
 def lambda_handler(event, context):
     options = resolve_x_processing_options(event)
     bucket = options["bucket"]
@@ -519,11 +574,17 @@ def lambda_handler(event, context):
     normalized = normalize_x_dataset(
         tweets, data_date, options["ingest_date"], processed_at_utc
     )
+    write_results = write_x_silver_tables(
+        bucket,
+        options["silver_prefix"],
+        normalized,
+        mode=options["mode"],
+    )
 
     return {
         "source": "x",
         "layer": "silver",
-        "status": "normalized",
+        "status": "success",
         "bucket": bucket,
         "bronze_key": bronze_key,
         "silver_prefix": options["silver_prefix"],
@@ -531,10 +592,7 @@ def lambda_handler(event, context):
         "data_date": data_date,
         "dataset_name": options["dataset_name"],
         "mode": options["mode"],
-        "tables": {
-            table_name: {"row_count": len(rows)}
-            for table_name, rows in normalized.items()
-        },
+        "tables": write_results,
         "processed_at_utc": processed_at_utc,
         "request_id": getattr(context, "aws_request_id", None),
     }
