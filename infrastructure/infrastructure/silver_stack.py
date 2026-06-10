@@ -79,15 +79,23 @@ class SilverStack(Stack):
             "DEFAULT_X_DATASET_NAME": "x-synthetic-seed",
         }
 
+        aws_sdk_pandas_layer = _lambda.LayerVersion.from_layer_version_arn(
+            self,
+            "AwsSdkPandasPython312Layer",
+            "arn:aws:lambda:eu-central-1:336392948345:layer:AWSSDKPandas-Python312:27",
+        )
+
         hn_silver_lambda = _lambda.Function(
             self,
             "HackerNewsSilverNormalizationFunction",
             function_name="normalize-hn-silver",
             runtime=_lambda.Runtime.PYTHON_3_12,
+            architecture=_lambda.Architecture.X86_64,
             handler="handler.lambda_handler",
             code=_lambda.Code.from_asset(
                 str(Path(__file__).resolve().parents[2] / "lambdas/hn_silver_normalization")
             ),
+            layers=[aws_sdk_pandas_layer],
             role=silver_lambda_role,
             timeout=Duration.minutes(10),
             memory_size=1024,
@@ -99,10 +107,12 @@ class SilverStack(Stack):
             "XSilverNormalizationFunction",
             function_name="normalize-x-silver",
             runtime=_lambda.Runtime.PYTHON_3_12,
+            architecture=_lambda.Architecture.X86_64,
             handler="handler.lambda_handler",
             code=_lambda.Code.from_asset(
                 str(Path(__file__).resolve().parents[2] / "lambdas/x_silver_normalization")
             ),
+            layers=[aws_sdk_pandas_layer],
             role=silver_lambda_role,
             timeout=Duration.minutes(10),
             memory_size=1024,

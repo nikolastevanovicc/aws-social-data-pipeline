@@ -123,7 +123,7 @@ def print_summary(
 
 
 def upload_files(bucket: str, uploads: list[tuple[Path, str]]) -> None:
-    import boto3
+    import boto3  # type: ignore[import-not-found]
 
     s3 = boto3.client("s3")
     for local_path, s3_uri in uploads:
