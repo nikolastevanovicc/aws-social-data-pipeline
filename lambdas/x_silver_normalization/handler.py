@@ -82,6 +82,56 @@ def clean_text(value):
     return cleaned or None
 
 
+def extract_x_hashtags(tweet):
+    if not isinstance(tweet, dict):
+        return []
+
+    hashtag_groups = [tweet.get("hashtags")]
+    entities = tweet.get("entities")
+    if isinstance(entities, dict):
+        hashtag_groups.append(entities.get("hashtags"))
+
+    hashtags = []
+    seen_hashtags = set()
+    for hashtag_group in hashtag_groups:
+        if not isinstance(hashtag_group, list):
+            continue
+
+        for entry in hashtag_group:
+            if isinstance(entry, str):
+                hashtag = clean_text(entry)
+            elif isinstance(entry, dict):
+                hashtag = clean_text(entry.get("tag"))
+                if hashtag is None:
+                    hashtag = clean_text(entry.get("text"))
+            else:
+                continue
+
+            if hashtag and hashtag.startswith("#"):
+                hashtag = clean_text(hashtag[1:])
+            if hashtag is None:
+                continue
+
+            hashtag = hashtag.lower()
+            if hashtag in seen_hashtags:
+                continue
+            seen_hashtags.add(hashtag)
+            hashtags.append(hashtag)
+
+    return hashtags
+
+
+def normalize_x_relation_type(raw_type):
+    if not isinstance(raw_type, str):
+        return None
+
+    relation_type = raw_type.strip().lower()
+    if relation_type in {"retweeted", "replied_to", "quoted"}:
+        return relation_type
+
+    return None
+
+
 def safe_int(value):
     if value is None or value == "":
         return None
@@ -270,6 +320,106 @@ def normalize_x_posts(tweets, data_date, ingest_date, processed_at_utc):
         )
 
     return normalized_posts
+
+
+def normalize_x_post_tags(tweets, data_date, ingest_date, processed_at_utc):
+    normalized_post_tags = []
+    seen_post_tags = set()
+
+    for tweet in tweets or []:
+        if not isinstance(tweet, dict):
+            continue
+
+        raw_source_post_id = tweet.get("id")
+        if raw_source_post_id is None or raw_source_post_id == "":
+            continue
+        source_post_id = str(raw_source_post_id)
+        post_id = stable_uuid(X_POST_NAMESPACE, f"{X_PLATFORM}:{source_post_id}")
+
+        created_at_utc = parse_iso_timestamp(tweet.get("created_at"))
+        date_parts = extract_date_parts(created_at_utc)
+        for tag in extract_x_hashtags(tweet):
+            deduplication_key = (post_id, tag)
+            if deduplication_key in seen_post_tags:
+                continue
+            seen_post_tags.add(deduplication_key)
+
+            normalized_post_tags.append(
+                {
+                    "post_id": post_id,
+                    "platform": X_PLATFORM,
+                    "tag": tag,
+                    "tag_type": "hashtag",
+                    "created_at_utc": created_at_utc,
+                    "year": date_parts["year"],
+                    "month": date_parts["month"],
+                    "day": date_parts["day"],
+                    "data_date": data_date,
+                    "ingest_date": ingest_date,
+                    "silver_processed_at_utc": processed_at_utc,
+                }
+            )
+
+    return normalized_post_tags
+
+
+def normalize_x_post_relations(tweets, data_date, ingest_date, processed_at_utc):
+    normalized_post_relations = []
+    seen_post_relations = set()
+
+    for tweet in tweets or []:
+        if not isinstance(tweet, dict):
+            continue
+
+        raw_source_post_id = tweet.get("id")
+        if raw_source_post_id is None or raw_source_post_id == "":
+            continue
+        source_post_id = str(raw_source_post_id)
+        post_id = stable_uuid(X_POST_NAMESPACE, f"{X_PLATFORM}:{source_post_id}")
+
+        referenced_tweets = tweet.get("referenced_tweets")
+        if not isinstance(referenced_tweets, list):
+            continue
+
+        created_at_utc = parse_iso_timestamp(tweet.get("created_at"))
+        date_parts = extract_date_parts(created_at_utc)
+        for reference in referenced_tweets:
+            if not isinstance(reference, dict):
+                continue
+
+            relation_type = normalize_x_relation_type(reference.get("type"))
+            if relation_type is None:
+                continue
+
+            raw_related_source_post_id = reference.get("id")
+            if raw_related_source_post_id is None or raw_related_source_post_id == "":
+                raw_related_source_post_id = reference.get("tweet_id")
+            if raw_related_source_post_id is None or raw_related_source_post_id == "":
+                continue
+            related_source_post_id = str(raw_related_source_post_id)
+
+            deduplication_key = (post_id, related_source_post_id, relation_type)
+            if deduplication_key in seen_post_relations:
+                continue
+            seen_post_relations.add(deduplication_key)
+
+            normalized_post_relations.append(
+                {
+                    "post_id": post_id,
+                    "platform": X_PLATFORM,
+                    "related_source_post_id": related_source_post_id,
+                    "relation_type": relation_type,
+                    "created_at_utc": created_at_utc,
+                    "year": date_parts["year"],
+                    "month": date_parts["month"],
+                    "day": date_parts["day"],
+                    "data_date": data_date,
+                    "ingest_date": ingest_date,
+                    "silver_processed_at_utc": processed_at_utc,
+                }
+            )
+
+    return normalized_post_relations
 
 
 def lambda_handler(event, context):
