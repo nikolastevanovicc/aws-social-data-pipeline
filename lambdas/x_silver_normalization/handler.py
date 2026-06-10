@@ -1,5 +1,6 @@
 import datetime as dt
 import html
+import json
 import os
 import re
 import uuid
@@ -12,6 +13,71 @@ X_POST_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_DNS, "social-data-pipeline:x:post")
 
 def utc_now_iso():
     return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def get_s3_client():
+    import boto3
+
+    return boto3.client("s3")
+
+
+def resolve_x_processing_options(event):
+    event = event if isinstance(event, dict) else {}
+
+    return {
+        "bucket": event.get("bucket") or os.getenv("DATA_LAKE_BUCKET"),
+        "bronze_prefix": event.get("bronze_prefix")
+        or os.getenv("BRONZE_X_PREFIX")
+        or "bronze/x",
+        "silver_prefix": event.get("silver_prefix")
+        or os.getenv("SILVER_PREFIX")
+        or "silver",
+        "ingest_date": event.get("ingest_date")
+        or dt.datetime.now(dt.timezone.utc).date().isoformat(),
+        "dataset_name": event.get("x_dataset_name")
+        or os.getenv("DEFAULT_X_DATASET_NAME")
+        or "x-synthetic-seed",
+        "mode": event.get("mode") or "overwrite_partitions",
+    }
+
+
+def build_x_bronze_tweets_key(bronze_prefix, ingest_date, dataset_name):
+    bronze_prefix = bronze_prefix.rstrip("/")
+    return (
+        f"{bronze_prefix}/ingest_date={ingest_date}/"
+        f"dataset_name={dataset_name}/tweets.json"
+    )
+
+
+def read_json_from_s3(bucket, key, s3_client=None):
+    if not bucket:
+        raise ValueError("bucket is required")
+    if not key:
+        raise ValueError("key is required")
+
+    client = s3_client if s3_client is not None else get_s3_client()
+    response = client.get_object(Bucket=bucket, Key=key)
+    return json.loads(response["Body"].read().decode("utf-8"))
+
+
+def extract_tweets_from_payload(payload):
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        if isinstance(payload.get("tweets"), list):
+            return payload["tweets"]
+        if isinstance(payload.get("data"), list):
+            return payload["data"]
+
+    return []
+
+
+def load_x_tweets_from_bronze(
+    bucket, bronze_prefix, ingest_date, dataset_name, s3_client=None
+):
+    key = build_x_bronze_tweets_key(bronze_prefix, ingest_date, dataset_name)
+    payload = read_json_from_s3(bucket, key, s3_client=s3_client)
+    return extract_tweets_from_payload(payload), key
 
 
 def parse_iso_timestamp(value):
@@ -422,24 +488,53 @@ def normalize_x_post_relations(tweets, data_date, ingest_date, processed_at_utc)
     return normalized_post_relations
 
 
+def normalize_x_dataset(tweets, data_date, ingest_date, processed_at_utc):
+    return {
+        "users": normalize_x_users(tweets, data_date, ingest_date, processed_at_utc),
+        "posts": normalize_x_posts(tweets, data_date, ingest_date, processed_at_utc),
+        "post_tags": normalize_x_post_tags(
+            tweets, data_date, ingest_date, processed_at_utc
+        ),
+        "post_relations": normalize_x_post_relations(
+            tweets, data_date, ingest_date, processed_at_utc
+        ),
+    }
+
+
 def lambda_handler(event, context):
-    ingest_date = event.get("ingest_date") if isinstance(event, dict) else None
-    dataset_name = (
-        event.get("x_dataset_name")
-        if isinstance(event, dict) and event.get("x_dataset_name")
-        else os.getenv("DEFAULT_X_DATASET_NAME", "x-synthetic-seed")
+    options = resolve_x_processing_options(event)
+    bucket = options["bucket"]
+    if not bucket:
+        raise ValueError("DATA_LAKE_BUCKET is required")
+
+    tweets, bronze_key = load_x_tweets_from_bronze(
+        bucket,
+        options["bronze_prefix"],
+        options["ingest_date"],
+        options["dataset_name"],
+    )
+    processed_at_utc = utc_now_iso()
+    event = event if isinstance(event, dict) else {}
+    data_date = event.get("data_date") or options["ingest_date"]
+    normalized = normalize_x_dataset(
+        tweets, data_date, options["ingest_date"], processed_at_utc
     )
 
     return {
         "source": "x",
         "layer": "silver",
-        "status": "placeholder",
-        "ingest_date": ingest_date,
-        "dataset_name": dataset_name,
-        "bucket": os.getenv("DATA_LAKE_BUCKET"),
-        "bronze_prefix": os.getenv("BRONZE_X_PREFIX", "bronze/x"),
-        "silver_prefix": os.getenv("SILVER_PREFIX", "silver"),
-        "processed_at_utc": utc_now_iso(),
-        "message": "X silver normalization implementation is assigned to Student 3.",
+        "status": "normalized",
+        "bucket": bucket,
+        "bronze_key": bronze_key,
+        "silver_prefix": options["silver_prefix"],
+        "ingest_date": options["ingest_date"],
+        "data_date": data_date,
+        "dataset_name": options["dataset_name"],
+        "mode": options["mode"],
+        "tables": {
+            table_name: {"row_count": len(rows)}
+            for table_name, rows in normalized.items()
+        },
+        "processed_at_utc": processed_at_utc,
         "request_id": getattr(context, "aws_request_id", None),
     }
