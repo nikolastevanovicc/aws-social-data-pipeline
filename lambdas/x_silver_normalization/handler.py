@@ -501,6 +501,67 @@ def normalize_x_dataset(tweets, data_date, ingest_date, processed_at_utc):
     }
 
 
+def calculate_data_quality_score(rows):
+    if not rows:
+        return {
+            "row_count": 0,
+            "column_count": 0,
+            "non_null_cell_count": 0,
+            "total_cell_count": 0,
+            "data_quality_score": 0.0,
+        }
+
+    columns = {key for row in rows if isinstance(row, dict) for key in row}
+    row_count = len(rows)
+    column_count = len(columns)
+    total_cell_count = row_count * column_count
+    non_null_cell_count = sum(
+        1
+        for row in rows
+        for column in columns
+        if isinstance(row, dict)
+        and row.get(column) is not None
+        and row.get(column) != ""
+    )
+    data_quality_score = (
+        round(non_null_cell_count / total_cell_count * 100, 2)
+        if total_cell_count
+        else 0.0
+    )
+
+    return {
+        "row_count": row_count,
+        "column_count": column_count,
+        "non_null_cell_count": non_null_cell_count,
+        "total_cell_count": total_cell_count,
+        "data_quality_score": data_quality_score,
+    }
+
+
+def build_data_quality_report_rows(
+    normalized_tables, data_date, ingest_date, processed_at_utc
+):
+    report_rows = []
+    for table_name in ("users", "posts", "post_tags", "post_relations"):
+        quality = calculate_data_quality_score(normalized_tables.get(table_name, []))
+        report_rows.append(
+            {
+                "table_name": table_name,
+                "platform": X_PLATFORM,
+                "data_date": data_date,
+                "ingest_date": ingest_date,
+                "row_count": quality["row_count"],
+                "column_count": quality["column_count"],
+                "non_null_cell_count": quality["non_null_cell_count"],
+                "total_cell_count": quality["total_cell_count"],
+                "data_quality_score": quality["data_quality_score"],
+                "silver_processed_at_utc": processed_at_utc,
+            }
+        )
+
+    return report_rows
+
+
 def write_parquet_table(
     bucket,
     silver_prefix,
@@ -514,13 +575,14 @@ def write_parquet_table(
         f"{normalized_silver_prefix}/" if normalized_silver_prefix else ""
     )
     s3_path = f"s3://{bucket}/{prefix_path}{table_name}/"
+    rows = rows or []
     row_count = len(rows)
 
     if not rows:
         return {"row_count": row_count, "s3_path": s3_path, "written": False}
 
-    import awswrangler as wr
-    import pandas as pd
+    import awswrangler as wr  # type: ignore[import-not-found]
+    import pandas as pd  # type: ignore[import-not-found]
 
     df = pd.DataFrame(rows)
     wr.s3.to_parquet(
@@ -541,6 +603,7 @@ def write_x_silver_tables(
         "posts": ["platform", "year", "month", "day"],
         "post_tags": ["platform", "year", "month", "day"],
         "post_relations": ["platform", "year", "month", "day"],
+        "data_quality_report": ["platform", "data_date"],
     }
 
     return {
@@ -573,6 +636,12 @@ def lambda_handler(event, context):
     data_date = event.get("data_date") or options["ingest_date"]
     normalized = normalize_x_dataset(
         tweets, data_date, options["ingest_date"], processed_at_utc
+    )
+    normalized["data_quality_report"] = build_data_quality_report_rows(
+        normalized,
+        data_date,
+        options["ingest_date"],
+        processed_at_utc,
     )
     write_results = write_x_silver_tables(
         bucket,
