@@ -10,6 +10,8 @@ HANDLER_PATH = (
 )
 SPEC = importlib.util.spec_from_file_location("x_silver_normalization_handler", HANDLER_PATH)
 handler = importlib.util.module_from_spec(SPEC)
+assert SPEC is not None
+assert SPEC.loader is not None
 SPEC.loader.exec_module(handler)
 
 

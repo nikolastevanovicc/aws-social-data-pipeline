@@ -105,6 +105,30 @@ def test_silver_lambdas_have_expected_environment_variables():
     )
 
 
+def test_silver_lambdas_include_aws_sdk_pandas_layer():
+    _, _, silver_template = _stacks()
+    expected_layer = [
+        "arn:aws:lambda:eu-central-1:336392948345:layer:AWSSDKPandas-Python312:27"
+    ]
+
+    silver_template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "FunctionName": "normalize-hn-silver",
+            "Architectures": ["x86_64"],
+            "Layers": expected_layer,
+        },
+    )
+    silver_template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "FunctionName": "normalize-x-silver",
+            "Architectures": ["x86_64"],
+            "Layers": expected_layer,
+        },
+    )
+
+
 def test_silver_iam_policy_has_bronze_read_and_silver_write_access():
     _, _, silver_template = _stacks()
     silver_template.has_resource_properties(
