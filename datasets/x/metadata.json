@@ -1,0 +1,11 @@
+{
+  "dataset_name": "x-synthetic-seed",
+  "source_type": "synthetic",
+  "generated_by": "team",
+  "record_count": 50,
+  "format": "json",
+  "topic": "technology, bitcoin, cloud computing and software engineering posts",
+  "bronze_layer_note": "The dataset is stored in raw JSON format with no cleaning, normalization, deduplication, or schema transformation.",
+  "reason_for_synthetic_dataset": "The project specification allows existing, manually created, or generated datasets because the X API free tier is limited.",
+  "intended_s3_prefix": "bronze/x/ingest_date=YYYY-MM-DD/dataset_name=x-synthetic-seed/"
+}
