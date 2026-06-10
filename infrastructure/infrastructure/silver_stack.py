@@ -70,6 +70,12 @@ class SilverStack(Stack):
                 resources=[data_lake_bucket.arn_for_objects("silver/*")],
             )
         )
+        silver_lambda_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["s3:DeleteObject"],
+                resources=[data_lake_bucket.arn_for_objects("silver/*")],
+            )
+        )
 
         silver_environment = {
             "DATA_LAKE_BUCKET": data_lake_bucket.bucket_name,
