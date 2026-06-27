@@ -3,6 +3,7 @@ import aws_cdk.assertions as assertions
 
 from infrastructure.bronze_stack import BronzeStack
 from infrastructure.data_lake_stack import DataLakeStack
+from infrastructure.gold_stack import GoldStack
 from infrastructure.silver_stack import SilverStack
 
 
@@ -19,15 +20,21 @@ def _stacks():
         "silver",
         data_lake_bucket=data_lake_stack.data_lake_bucket,
     )
+    gold_stack = GoldStack(
+        app,
+        "gold",
+        data_lake_bucket=data_lake_stack.data_lake_bucket,
+    )
     return (
         assertions.Template.from_stack(data_lake_stack),
         assertions.Template.from_stack(bronze_stack),
         assertions.Template.from_stack(silver_stack),
+        assertions.Template.from_stack(gold_stack),
     )
 
 
 def test_s3_bucket_has_expected_security_properties():
-    data_lake_template, _, _ = _stacks()
+    data_lake_template, _, _, _ = _stacks()
     data_lake_template.has_resource_properties(
         "AWS::S3::Bucket",
         {
@@ -48,7 +55,7 @@ def test_s3_bucket_has_expected_security_properties():
 
 
 def test_bronze_lambda_has_expected_environment_variables():
-    _, bronze_template, _ = _stacks()
+    _, bronze_template, _, _ = _stacks()
     bronze_template.has_resource_properties(
         "AWS::Lambda::Function",
         {
@@ -66,7 +73,7 @@ def test_bronze_lambda_has_expected_environment_variables():
 
 
 def test_bronze_eventbridge_rule_is_daily_at_0200_utc():
-    _, bronze_template, _ = _stacks()
+    _, bronze_template, _, _ = _stacks()
     bronze_template.has_resource_properties(
         "AWS::Events::Rule",
         {"ScheduleExpression": "cron(0 2 * * ? *)", "State": "ENABLED"},
@@ -74,7 +81,7 @@ def test_bronze_eventbridge_rule_is_daily_at_0200_utc():
 
 
 def test_silver_lambdas_have_expected_environment_variables():
-    _, _, silver_template = _stacks()
+    _, _, silver_template, _ = _stacks()
     expected_environment = {
         "Variables": {
             "DATA_LAKE_BUCKET": assertions.Match.any_value(),
@@ -106,7 +113,7 @@ def test_silver_lambdas_have_expected_environment_variables():
 
 
 def test_silver_lambdas_include_aws_sdk_pandas_layer():
-    _, _, silver_template = _stacks()
+    _, _, silver_template, _ = _stacks()
     expected_layer = [
         "arn:aws:lambda:eu-central-1:336392948345:layer:AWSSDKPandas-Python312:27"
     ]
@@ -130,8 +137,88 @@ def test_silver_lambdas_include_aws_sdk_pandas_layer():
 
 
 def test_silver_iam_policy_has_bronze_read_and_silver_write_access():
-    _, _, silver_template = _stacks()
+    _, _, silver_template, _ = _stacks()
     silver_template.has_resource_properties(
+        "AWS::IAM::Policy",
+        {
+            "PolicyDocument": {
+                "Statement": assertions.Match.array_with(
+                    [
+                        assertions.Match.object_like(
+                            {"Action": "s3:ListBucket", "Effect": "Allow"}
+                        ),
+                        assertions.Match.object_like(
+                            {"Action": "s3:GetObject", "Effect": "Allow"}
+                        ),
+                        assertions.Match.object_like(
+                            {"Action": "s3:PutObject", "Effect": "Allow"}
+                        ),
+                    ]
+                )
+            }
+        },
+    )
+
+
+def test_gold_lambdas_have_expected_environment_variables():
+    _, _, _, gold_template = _stacks()
+    expected_environment = {
+        "Variables": {
+            "DATA_LAKE_BUCKET": assertions.Match.any_value(),
+            "SILVER_PREFIX": "silver",
+            "GOLD_PREFIX": "gold",
+            "HN_GOLD_PREFIX": "gold/hacker-news",
+            "X_GOLD_PREFIX": "gold/x",
+        }
+    }
+
+    gold_template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "FunctionName": "build-hn-gold",
+            "Handler": "handler.lambda_handler",
+            "Runtime": "python3.12",
+            "Environment": expected_environment,
+        },
+    )
+    gold_template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "FunctionName": "build-x-gold",
+            "Handler": "handler.lambda_handler",
+            "Runtime": "python3.12",
+            "Environment": expected_environment,
+        },
+    )
+
+
+def test_gold_lambdas_include_aws_sdk_pandas_layer():
+    _, _, _, gold_template = _stacks()
+    expected_layer = [
+        "arn:aws:lambda:eu-central-1:336392948345:layer:AWSSDKPandas-Python312:27"
+    ]
+
+    gold_template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "FunctionName": "build-hn-gold",
+            "Architectures": ["x86_64"],
+            "Layers": expected_layer,
+        },
+    )
+    gold_template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "FunctionName": "build-x-gold",
+            "Architectures": ["x86_64"],
+            "Layers": expected_layer,
+        },
+    )
+
+
+def test_gold_iam_policy_has_silver_read_and_gold_write_access():
+    _, _, _, gold_template = _stacks()
+    gold_template.has_resource_properties(
         "AWS::IAM::Policy",
         {
             "PolicyDocument": {
