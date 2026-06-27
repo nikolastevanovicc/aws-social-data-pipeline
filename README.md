@@ -1,15 +1,17 @@
 # AWS Social Data Pipeline
 
-Bronze layer baseline za predmetni projekat iz Racunarstva u oblaku.
+AWS/CDK projekat za social data pipeline kroz bronze, silver i gold slojeve.
 
-## Scope ove iteracije
+## Trenutni scope
 
-Ova iteracija pokriva Student 1 minimum:
-- S3 Data Lake bucket
-- Lambda resource za Hacker News ingestion
-- IAM least-privilege prava za Lambdu
-- EventBridge dnevni schedule u `02:00 UTC`
-- Osnovni scaffold za Student 2 i Student 3 rad
+Repozitorijum trenutno pokriva:
+
+- `DataLakeStack`: S3 Data Lake bucket.
+- `BronzeStack`: Hacker News bronze ingestion Lambda i EventBridge schedule.
+- `SilverStack`: silver normalization Lambda resource-i.
+- `GoldStack`: gold aggregation Lambda resource-i.
+- Least-privilege IAM role/policy po sloju.
+- Osnovni scaffold za Student 2 i Student 3 transformacije.
 
 ## Struktura repozitorijuma
 
@@ -17,7 +19,11 @@ Ova iteracija pokriva Student 1 minimum:
 .
 ├── infrastructure/
 ├── lambdas/
-│   └── hn_ingestion/
+│   ├── hn_ingestion/
+│   ├── hn_silver_normalization/
+│   ├── x_silver_normalization/
+│   ├── hn_gold_aggregation/
+│   └── x_gold_aggregation/
 ├── datasets/
 │   └── x/
 ├── scripts/
@@ -51,13 +57,10 @@ cdk bootstrap
 cd infrastructure
 source .venv/bin/activate
 cdk synth
-cdk deploy
+cdk deploy --all
 ```
 
-Deploy kreira:
-- `S3` Data Lake bucket
-- `Lambda` funkciju `hn-bronze-ingestion`
-- `EventBridge` pravilo sa schedule izrazom `cron(0 2 * * ? *)`
+Deploy kreira Data Lake, Bronze, Silver i Gold stackove.
 
 ## Test invoke Lambda funkcije
 
@@ -100,7 +103,23 @@ U bronze sloju podaci se cuvaju u raw obliku:
 - nema deduplikacije
 - nema izmene izvorne seme
 
+## Silver i Gold konvencije
+
+Silver sloj cita `bronze/*` i pise normalizovane podatke u:
+
+```text
+s3://<bucket>/silver/...
+```
+
+Gold sloj cita `silver/*` i pise agregirane analiticke podatke u:
+
+```text
+s3://<bucket>/gold/hacker-news/...
+s3://<bucket>/gold/x/...
+```
+
 ## Dokumentacija
 
-- Networking odluka: `docs/networking-decision.md`
-- Arhitektura i demo skeleton: `docs/architecture.md`, `docs/kt1-test-plan.md`, `docs/demo-script.md`
+- Silver deploy guide: `docs/kt2-deploy.md`
+- Gold layer podela rada: `docs/gold-layer-student-division.md`
+- Gold deploy guide: `docs/gold-deploy.md`
