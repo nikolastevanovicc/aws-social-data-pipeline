@@ -103,7 +103,7 @@ class SilverStack(Stack):
             ),
             layers=[aws_sdk_pandas_layer],
             role=silver_lambda_role,
-            timeout=Duration.minutes(10),
+            timeout=Duration.minutes(15),
             memory_size=1024,
             environment=silver_environment,
         )

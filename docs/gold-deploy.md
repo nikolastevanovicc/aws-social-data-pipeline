@@ -1,6 +1,6 @@
 # Gold Deploy Guide
 
-This guide covers the Student 1 infrastructure workflow for the gold layer.
+This guide covers the gold layer deployment and runtime checks.
 
 ## Scope
 
@@ -25,7 +25,8 @@ Both functions receive the same environment contract:
 - `X_GOLD_PREFIX=gold/x`
 
 The gold Lambda role can list the Data Lake bucket, read `silver/*`, and write
-`gold/*`.
+`gold/*`. Both functions read silver Parquet datasets and write gold Parquet
+metrics back to S3.
 
 ## Local Checks
 
@@ -63,33 +64,38 @@ The deploy outputs include:
 
 ## Manual Invoke
 
-Hacker News gold placeholder:
+Hacker News gold metrics:
 
 ```bash
+printf '%s' '{"data_date":"2026-05-18","mode":"overwrite_partitions"}' > hn_gold_runtime_event.json
+
 aws lambda invoke \
   --function-name build-hn-gold \
-  --payload fileb://../lambdas/hn_gold_aggregation/test_event.json \
+  --payload fileb://hn_gold_runtime_event.json \
   hn_gold_response.json \
-  --region eu-central-1
+  --region eu-central-1 \
+  --cli-read-timeout 900
 
 cat hn_gold_response.json
 ```
 
-X gold placeholder:
+X gold metrics:
 
 ```bash
 aws lambda invoke \
   --function-name build-x-gold \
   --payload fileb://../lambdas/x_gold_aggregation/test_event.json \
   x_gold_response.json \
-  --region eu-central-1
+  --region eu-central-1 \
+  --cli-read-timeout 900
 
 cat x_gold_response.json
 ```
 
-## S3 Verification
+The committed X test event uses `data_date=2026-05-30`, matching the synthetic X
+seed dataset used by `normalize-x-silver`.
 
-After Student 2 and Student 3 implement aggregation and Parquet writes:
+## S3 Verification
 
 ```bash
 aws s3 ls s3://<bucket-name>/gold/ --recursive --region eu-central-1
@@ -98,20 +104,29 @@ aws s3 ls s3://<bucket-name>/gold/ --recursive --region eu-central-1
 Expected gold prefixes:
 
 ```text
-gold/hacker-news/daily_metrics/
-gold/hacker-news/top_posts/
-gold/hacker-news/top_users/
-gold/hacker-news/post_type_distribution/
+gold/hacker-news/daily_item_counts/
+gold/hacker-news/daily_users_metric/
+gold/hacker-news/top_story_posts/
+gold/hacker-news/top_job_posts/
+gold/hacker-news/top_users_by_karma/
+gold/hacker-news/bottom_users_by_karma/
 gold/hacker-news/data_quality_summary/
-gold/x/daily_metrics/
-gold/x/top_posts/
-gold/x/top_users/
+gold/x/daily_users_metric/
+gold/x/top_users_by_followers/
+gold/x/top_posts_by_engagement/
 gold/x/hashtag_trends/
 gold/x/data_quality_summary/
 ```
 
 ## Notes
 
-The current Student 1 delivery creates infrastructure and placeholder Lambda
-entrypoints. Actual gold business aggregations are implemented by Student 2 and
-Student 3 after the required silver outputs are available.
+Gold execution requires existing silver outputs in `silver/users/`,
+`silver/posts/`, `silver/post_tags/`, and `silver/data_quality_report/`.
+
+Hacker News karma metrics use `karma_score` from the HN silver users dataset.
+The HN silver Lambda enriches active authors from the Hacker News user API before
+writing `silver/users/`.
+
+Both gold Lambdas read only their platform partition from shared silver datasets:
+`build-hn-gold` reads `platform=HackerNews`, and `build-x-gold` reads
+`platform=X`.

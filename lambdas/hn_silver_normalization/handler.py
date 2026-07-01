@@ -1,10 +1,17 @@
+from __future__ import annotations
+
 import datetime as dt
+import concurrent.futures
 import os
 import json
 import boto3
 import html
 import re
 import uuid
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from botocore.exceptions import ClientError
 import io
 import pandas as pd
@@ -12,12 +19,105 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 HN_ITEM_TYPES = ("story", "ask", "comment", "job", "poll")
+HN_API_BASE_URL = "https://hacker-news.firebaseio.com/v0"
 
 PLATFORM_HACKER_NEWS = "HackerNews"
 
 UUID_NAMESPACE = uuid.UUID("8f0f9f6b-4c3c-4f4a-9d2a-6c4c8f1f3b21")
 
 s3_client = boto3.client("s3")
+
+
+def http_get_json(
+    url: str,
+    max_retries: int = 3,
+    timeout_seconds: int = 10,
+) -> object:
+    for attempt in range(max_retries):
+        try:
+            with urllib.request.urlopen(url, timeout=timeout_seconds) as response:
+                payload = response.read().decode("utf-8")
+                return json.loads(payload)
+        except urllib.error.HTTPError as exc:
+            print(
+                f"HTTP error while requesting {url} "
+                f"(attempt {attempt + 1}/{max_retries}): {exc}"
+            )
+        except urllib.error.URLError as exc:
+            print(
+                f"URL error while requesting {url} "
+                f"(attempt {attempt + 1}/{max_retries}): {exc}"
+            )
+        except Exception as exc:
+            print(
+                f"Unexpected error while requesting {url} "
+                f"(attempt {attempt + 1}/{max_retries}): {exc}"
+            )
+
+        if attempt < max_retries - 1:
+            time.sleep(0.2)
+
+    print(f"Giving up after {max_retries} attempts: {url}")
+    return None
+
+
+def fetch_hn_user_profile(username: str) -> dict | None:
+    if not username:
+        return None
+
+    encoded_username = urllib.parse.quote(username, safe="")
+    url = f"{HN_API_BASE_URL}/user/{encoded_username}.json"
+    result = http_get_json(url, max_retries=2, timeout_seconds=4)
+
+    if not isinstance(result, dict):
+        return None
+
+    return result
+
+
+def fetch_hn_user_profiles(usernames: list[str]) -> dict[str, dict]:
+    profiles = {}
+    unique_usernames = sorted({name for name in usernames if name})
+
+    if not unique_usernames:
+        print("Fetched HN user profiles: 0")
+        return profiles
+
+    max_workers = min(16, len(unique_usernames))
+    print(
+        "Fetching HN user profiles: "
+        f"unique_users={len(unique_usernames)}, max_workers={max_workers}"
+    )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_username = {
+            executor.submit(fetch_hn_user_profile, username): username
+            for username in unique_usernames
+        }
+
+        for completed_count, future in enumerate(
+            concurrent.futures.as_completed(future_to_username),
+            start=1,
+        ):
+            username = future_to_username[future]
+
+            try:
+                profile = future.result()
+            except Exception as exc:
+                print(f"Failed to fetch HN user profile for {username}: {exc}")
+                continue
+
+            if profile is not None:
+                profiles[username.lower()] = profile
+
+            if completed_count % 250 == 0 or completed_count == len(unique_usernames):
+                print(
+                    "HN user profile fetch progress: "
+                    f"{completed_count}/{len(unique_usernames)}"
+                )
+
+    print(f"Fetched HN user profiles: {len(profiles)}")
+    return profiles
 
 def utc_today() -> str:
     return dt.datetime.now(dt.timezone.utc).date().isoformat()
@@ -176,6 +276,22 @@ def normalize_hn_timestamp(value: object) -> tuple[str | None, str | None, str |
     )
 
 
+def extract_data_date_parts(data_date: str) -> tuple[str | None, str | None, str | None]:
+    if not isinstance(data_date, str) or not data_date.strip():
+        return None, None, None
+
+    try:
+        parsed = dt.date.fromisoformat(data_date.strip())
+    except ValueError:
+        return None, None, None
+
+    return (
+        f"{parsed.year:04d}",
+        f"{parsed.month:02d}",
+        f"{parsed.day:02d}",
+    )
+
+
 def stable_uuid(*parts: object) -> str:
     normalized_parts = ["" if part is None else str(part) for part in parts]
     raw_value = "|".join(normalized_parts)
@@ -213,8 +329,11 @@ def normalize_hn_users(
     data_date: str,
     ingest_date: str,
     silver_processed_at_utc: str,
+    user_profiles: dict[str, dict] | None = None,
 ) -> list[dict]:
     users_by_username = {}
+    year, month, day = extract_data_date_parts(data_date)
+    user_profiles = user_profiles or {}
 
     for item in items:
         username = item.get("author")
@@ -232,17 +351,39 @@ def normalize_hn_users(
         if user_key in users_by_username:
             continue
 
+        profile = user_profiles.get(user_key, {})
+        karma_score = profile.get("karma") if isinstance(profile, dict) else None
+        try:
+            karma_score = int(karma_score) if karma_score is not None else None
+        except (TypeError, ValueError):
+            karma_score = None
+
+        user_created_at_utc = None
+        if isinstance(profile, dict):
+            created_at = profile.get("created")
+            try:
+                created_at = int(created_at) if created_at is not None else None
+            except (TypeError, ValueError):
+                created_at = None
+            if created_at is not None:
+                user_created_at_utc = dt.datetime.fromtimestamp(
+                    created_at, tz=dt.timezone.utc
+                ).isoformat().replace("+00:00", "Z")
+
         users_by_username[user_key] = {
             "user_id": stable_uuid(PLATFORM_HACKER_NEWS, username),
             "platform": PLATFORM_HACKER_NEWS,
             "source_user_id": username,
             "username": username,
             "display_name": None,
-            "karma_score": None,
+            "karma_score": karma_score,
             "followers_count": None,
             "following_count": None,
             "is_verified": None,
-            "user_created_at_utc": None,
+            "user_created_at_utc": user_created_at_utc,
+            "year": year,
+            "month": month,
+            "day": day,
             "data_date": data_date,
             "ingest_date": ingest_date,
             "silver_processed_at_utc": silver_processed_at_utc,
@@ -662,7 +803,7 @@ def write_hn_silver_tables(
     normalized_tables: dict[str, list[dict]],
 ) -> dict:
     partition_columns = {
-        "users": ["platform", "data_date"],
+        "users": ["platform", "year", "month", "day"],
         "posts": ["platform", "year", "month", "day"],
         "post_tags": ["platform", "year", "month", "day"],
         "post_relations": ["platform", "year", "month", "day"],
@@ -721,12 +862,19 @@ def lambda_handler(event, context):
     )
 
     silver_processed_at_utc = utc_now_iso()
+    author_usernames = [
+        str(item.get("author")).strip()
+        for item in bronze_items
+        if item.get("author") is not None and str(item.get("author")).strip()
+    ]
+    user_profiles = fetch_hn_user_profiles(author_usernames)
 
     users = normalize_hn_users(
         items=bronze_items,
         data_date=options["data_date"],
         ingest_date=options["ingest_date"],
         silver_processed_at_utc=silver_processed_at_utc,
+        user_profiles=user_profiles,
     )
 
     posts = normalize_hn_posts(
