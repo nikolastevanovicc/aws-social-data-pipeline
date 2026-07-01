@@ -1,0 +1,47 @@
+services:
+  postgres:
+    container_name: social-analytics-postgres
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-social_analytics}
+      POSTGRES_USER: ${POSTGRES_USER:-superset}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-superset}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-superset} -d ${POSTGRES_DB:-social_analytics}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  superset:
+    container_name: social-analytics-superset
+    image: apache/superset:latest
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-social_analytics}
+      POSTGRES_USER: ${POSTGRES_USER:-superset}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-superset}
+      SUPERSET_ADMIN_USERNAME: ${SUPERSET_ADMIN_USERNAME:-admin}
+      SUPERSET_ADMIN_PASSWORD: ${SUPERSET_ADMIN_PASSWORD:-admin}
+      SUPERSET_ADMIN_FIRST_NAME: ${SUPERSET_ADMIN_FIRST_NAME:-Admin}
+      SUPERSET_ADMIN_LAST_NAME: ${SUPERSET_ADMIN_LAST_NAME:-User}
+      SUPERSET_ADMIN_EMAIL: ${SUPERSET_ADMIN_EMAIL:-admin@example.com}
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:-change-me-in-real-deployments}
+    ports:
+      - "8088:8088"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - superset_home:/app/superset_home
+      - ./superset-init.sh:/app/superset-init.sh:ro
+    command: ["/bin/bash", "/app/superset-init.sh"]
+
+volumes:
+  postgres_data:
+  superset_home:
