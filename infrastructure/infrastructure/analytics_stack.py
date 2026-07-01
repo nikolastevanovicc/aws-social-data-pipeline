@@ -23,7 +23,13 @@ class AnalyticsStack(Stack):
         superset_init_content = (
             repo_root / "docker" / "analytics" / "superset-init.sh"
         ).read_text(encoding="utf-8")
+        superset_dockerfile_content = (
+            repo_root / "docker" / "analytics" / "superset" / "Dockerfile"
+        ).read_text(encoding="utf-8")
         schema_content = (repo_root / "database" / "schema.sql").read_text(
+            encoding="utf-8"
+        )
+        views_content = (repo_root / "database" / "views.sql").read_text(
             encoding="utf-8"
         )
 
@@ -173,9 +179,12 @@ class AnalyticsStack(Stack):
                     "chmod +x /usr/local/lib/docker/cli-plugins/docker-compose; "
                     "fi"
                 ),
-                "mkdir -p /opt/social-analytics",
+                "mkdir -p /opt/social-analytics/superset",
                 "cd /opt/social-analytics",
                 self._write_file_command("docker-compose.yml", compose_content),
+                self._write_file_command(
+                    "superset/Dockerfile", superset_dockerfile_content
+                ),
                 self._write_file_command(
                     ".env",
                     "\n".join(
@@ -194,10 +203,11 @@ class AnalyticsStack(Stack):
                 ),
                 self._write_file_command("superset-init.sh", superset_init_content),
                 self._write_file_command("schema.sql", schema_content),
+                self._write_file_command("views.sql", views_content),
                 "chmod 600 .env",
                 "chmod +x superset-init.sh",
-                "docker compose pull",
-                "docker compose up -d",
+                "docker compose pull postgres",
+                "docker compose up -d --build",
                 (
                     "POSTGRES_READY=0; "
                     "for attempt in $(seq 1 60); do "
@@ -216,6 +226,11 @@ class AnalyticsStack(Stack):
                     "docker compose exec -T postgres sh -c "
                     "'psql -v ON_ERROR_STOP=1 -U \"$POSTGRES_USER\" "
                     "-d \"$POSTGRES_DB\"' < schema.sql"
+                ),
+                (
+                    "docker compose exec -T postgres sh -c "
+                    "'psql -v ON_ERROR_STOP=1 -U \"$POSTGRES_USER\" "
+                    "-d \"$POSTGRES_DB\"' < views.sql"
                 ),
             ]
         )

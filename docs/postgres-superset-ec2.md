@@ -11,8 +11,9 @@ The stack creates:
 - one Amazon Linux 2023 EC2 instance, defaulting to `t3.small`
 - a security group for Superset and PostgreSQL access
 - EC2 user data that installs Docker, installs Docker Compose support, writes
-  the analytics Docker Compose files, starts PostgreSQL and Superset, and
-  applies `database/schema.sql`
+  the analytics Docker Compose files, writes the custom Superset Dockerfile,
+  builds Superset with PostgreSQL driver support, starts PostgreSQL and
+  Superset, and applies both `database/schema.sql` and `database/views.sql`
 - an optional in-instance daily auto-stop cron guardrail for demo cost control
 
 ## Synthesize

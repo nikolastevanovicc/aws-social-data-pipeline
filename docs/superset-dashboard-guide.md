@@ -36,6 +36,11 @@ Use this SQLAlchemy URI when Superset is running from
 postgresql+psycopg2://superset:superset@postgres:5432/social_analytics
 ```
 
+The local Superset image is built from `docker/analytics/superset/Dockerfile`
+and includes PostgreSQL driver support through `psycopg2-binary`, so fresh
+Docker Compose setups can use this URI without manually installing packages in
+the running container.
+
 ### EC2
 
 Use the `PostgresHost` CloudFormation output as the PostgreSQL host. The

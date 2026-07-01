@@ -18,7 +18,10 @@ services:
 
   superset:
     container_name: social-analytics-superset
-    image: apache/superset:latest
+    build:
+      context: ./superset
+      dockerfile: Dockerfile
+    image: social-analytics-superset:local
     env_file:
       - path: .env
         required: false

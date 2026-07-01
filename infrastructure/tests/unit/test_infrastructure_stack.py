@@ -471,9 +471,13 @@ def test_analytics_user_data_is_synthesized():
 
     assert len(instances) == 1
     user_data = repr(instances[0]["Properties"].get("UserData"))
-    assert "docker compose up -d" in user_data
+    assert "docker compose up -d --build" in user_data
     assert "social-analytics-postgres" in user_data
+    assert "superset/Dockerfile" in user_data
+    assert "psycopg2-binary" in user_data
     assert "schema.sql" in user_data
+    assert "views.sql" in user_data
+    assert user_data.index("< schema.sql") < user_data.index("< views.sql")
 
 
 def test_analytics_user_data_contains_default_shutdown_cron():
@@ -484,9 +488,9 @@ def test_analytics_user_data_contains_default_shutdown_cron():
     assert "social-analytics-auto-stop" in user_data
     assert "/sbin/shutdown -h now" in user_data
     assert "0 22 * * * root" in user_data
-    assert "docker compose pull" in user_data
+    assert "docker compose pull postgres" in user_data
     assert user_data.index("social-analytics-auto-stop") < user_data.index(
-        "docker compose pull"
+        "docker compose pull postgres"
     )
 
 
