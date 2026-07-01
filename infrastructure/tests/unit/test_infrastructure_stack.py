@@ -5,6 +5,7 @@ from pathlib import Path
 import aws_cdk as core
 import aws_cdk.assertions as assertions
 
+from infrastructure.analytics_stack import AnalyticsStack
 from infrastructure.bronze_stack import BronzeStack
 from infrastructure.data_lake_stack import DataLakeStack
 from infrastructure.gold_stack import GoldStack
@@ -36,6 +37,23 @@ def _stacks():
         assertions.Template.from_stack(silver_stack),
         assertions.Template.from_stack(gold_stack),
     )
+
+
+@lru_cache(maxsize=1)
+def _analytics_stack():
+    app = core.App(
+        context={
+            "analytics_allowed_cidr": "0.0.0.0/0",
+            "analytics_postgres_password": "dummy",
+            "analytics_superset_secret_key": "dummy",
+        }
+    )
+    analytics_stack = AnalyticsStack(app, "analytics")
+    return assertions.Template.from_stack(analytics_stack)
+
+
+def _all_templates():
+    return (*_stacks(), _analytics_stack())
 
 
 def test_s3_bucket_has_expected_security_properties():
@@ -335,20 +353,110 @@ def test_gold_iam_policy_has_silver_read_and_gold_write_access():
 
 
 def test_iam_policies_do_not_grant_admin_wildcards():
-    for template in _stacks():
+    for template in _all_templates():
         template_json = template.to_json()
         policies = template_json["Resources"]
 
         for resource in policies.values():
-            if resource["Type"] != "AWS::IAM::Policy":
+            if resource["Type"] not in {"AWS::IAM::Policy", "AWS::IAM::ManagedPolicy"}:
                 continue
-            for statement in resource["Properties"]["PolicyDocument"]["Statement"]:
+            policy_document = resource["Properties"]["PolicyDocument"]
+            for statement in policy_document["Statement"]:
                 actions = statement["Action"]
                 if isinstance(actions, str):
                     actions = [actions]
                 assert "*" not in actions
                 assert "s3:*" not in actions
                 assert "iam:*" not in actions
+                assert "ec2:*" not in actions
+
+
+def test_analytics_stack_synthesizes_ec2_instance():
+    analytics_template = _analytics_stack()
+
+    analytics_template.resource_count_is("AWS::EC2::Instance", 1)
+    analytics_template.has_resource_properties(
+        "AWS::EC2::Instance",
+        {
+            "InstanceType": "t3.small",
+            "Tags": assertions.Match.array_with(
+                [{"Key": "Name", "Value": "social-analytics-ec2"}]
+            ),
+        },
+    )
+
+
+def test_analytics_security_group_allows_superset_and_postgres_ports():
+    analytics_template = _analytics_stack()
+
+    analytics_template.has_resource_properties(
+        "AWS::EC2::SecurityGroup",
+        {
+            "SecurityGroupIngress": assertions.Match.array_with(
+                [
+                    assertions.Match.object_like(
+                        {
+                            "IpProtocol": "tcp",
+                            "FromPort": 8088,
+                            "ToPort": 8088,
+                            "CidrIp": "0.0.0.0/0",
+                        }
+                    )
+                ]
+            )
+        },
+    )
+    analytics_template.has_resource_properties(
+        "AWS::EC2::SecurityGroup",
+        {
+            "SecurityGroupIngress": assertions.Match.array_with(
+                [
+                    assertions.Match.object_like(
+                        {
+                            "IpProtocol": "tcp",
+                            "FromPort": 5432,
+                            "ToPort": 5432,
+                            "CidrIp": "0.0.0.0/0",
+                        }
+                    )
+                ]
+            )
+        },
+    )
+
+
+def test_analytics_outputs_are_synthesized():
+    analytics_template = _analytics_stack()
+
+    for output_name in [
+        "AnalyticsInstanceId",
+        "AnalyticsPublicIp",
+        "AnalyticsPublicDnsName",
+        "SupersetUrl",
+        "PostgresHost",
+        "PostgresPort",
+    ]:
+        analytics_template.has_output(
+            output_name,
+            {"Value": assertions.Match.any_value()},
+        )
+
+
+def test_analytics_user_data_is_synthesized():
+    analytics_template = _analytics_stack()
+    template_json = analytics_template.to_json()
+
+    instances = [
+        resource
+        for resource in template_json["Resources"].values()
+        if resource["Type"] == "AWS::EC2::Instance"
+    ]
+
+    assert len(instances) == 1
+    user_data = repr(instances[0]["Properties"].get("UserData"))
+    assert "docker compose up -d" in user_data
+    assert "social-analytics-postgres" in user_data
+    assert "schema.sql" in user_data
 
 
 def _as_list(value):
