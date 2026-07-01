@@ -4,6 +4,7 @@ from pathlib import Path
 
 import aws_cdk as core
 import aws_cdk.assertions as assertions
+import pytest
 
 from infrastructure.analytics_stack import AnalyticsStack
 from infrastructure.bronze_stack import BronzeStack
@@ -41,13 +42,19 @@ def _stacks():
 
 @lru_cache(maxsize=1)
 def _analytics_stack():
-    app = core.App(
-        context={
-            "analytics_allowed_cidr": "0.0.0.0/0",
-            "analytics_postgres_password": "dummy",
-            "analytics_superset_secret_key": "dummy",
-        }
-    )
+    return _analytics_template()
+
+
+def _analytics_template(context=None):
+    default_context = {
+        "analytics_allowed_cidr": "0.0.0.0/0",
+        "analytics_postgres_password": "dummy",
+        "analytics_superset_secret_key": "dummy",
+    }
+    if context is not None:
+        default_context.update(context)
+
+    app = core.App(context=default_context)
     analytics_stack = AnalyticsStack(app, "analytics")
     return assertions.Template.from_stack(analytics_stack)
 
@@ -386,6 +393,15 @@ def test_analytics_stack_synthesizes_ec2_instance():
     )
 
 
+def test_analytics_instance_type_can_be_configured():
+    analytics_template = _analytics_template({"analytics_instance_type": "t3.micro"})
+
+    analytics_template.has_resource_properties(
+        "AWS::EC2::Instance",
+        {"InstanceType": "t3.micro"},
+    )
+
+
 def test_analytics_security_group_allows_superset_and_postgres_ports():
     analytics_template = _analytics_stack()
 
@@ -435,6 +451,7 @@ def test_analytics_outputs_are_synthesized():
         "SupersetUrl",
         "PostgresHost",
         "PostgresPort",
+        "AnalyticsAutoStopUtcHour",
     ]:
         analytics_template.has_output(
             output_name,
@@ -457,6 +474,47 @@ def test_analytics_user_data_is_synthesized():
     assert "docker compose up -d" in user_data
     assert "social-analytics-postgres" in user_data
     assert "schema.sql" in user_data
+
+
+def test_analytics_user_data_contains_default_shutdown_cron():
+    analytics_template = _analytics_stack()
+    user_data = _analytics_instance_user_data(analytics_template)
+
+    assert "Demo cost guardrail" in user_data
+    assert "social-analytics-auto-stop" in user_data
+    assert "/sbin/shutdown -h now" in user_data
+    assert "0 22 * * * root" in user_data
+    assert "docker compose pull" in user_data
+    assert user_data.index("social-analytics-auto-stop") < user_data.index(
+        "docker compose pull"
+    )
+
+
+def test_analytics_auto_stop_can_be_disabled():
+    analytics_template = _analytics_template({"analytics_auto_stop_enabled": "false"})
+    template_json = analytics_template.to_json()
+    user_data = _analytics_instance_user_data(analytics_template)
+
+    assert "social-analytics-auto-stop" not in user_data
+    assert "/sbin/shutdown -h now" not in user_data
+    assert "AnalyticsAutoStopUtcHour" not in template_json.get("Outputs", {})
+
+
+def test_analytics_invalid_auto_stop_hour_raises_value_error():
+    with pytest.raises(ValueError, match="between 0 and 23"):
+        _analytics_template({"analytics_auto_stop_utc_hour": "24"})
+
+
+def _analytics_instance_user_data(analytics_template):
+    template_json = analytics_template.to_json()
+    instances = [
+        resource
+        for resource in template_json["Resources"].values()
+        if resource["Type"] == "AWS::EC2::Instance"
+    ]
+
+    assert len(instances) == 1
+    return repr(instances[0]["Properties"].get("UserData"))
 
 
 def _as_list(value):

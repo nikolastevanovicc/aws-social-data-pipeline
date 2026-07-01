@@ -33,6 +33,23 @@ class AnalyticsStack(Stack):
         key_name = self._context_or_env(
             "analytics_key_name", "ANALYTICS_KEY_NAME", ""
         )
+        instance_type_value = self._context_or_env(
+            "analytics_instance_type", "ANALYTICS_INSTANCE_TYPE", "t3.small"
+        )
+        auto_stop_enabled = self._context_or_env_bool(
+            "analytics_auto_stop_enabled",
+            "ANALYTICS_AUTO_STOP_ENABLED",
+            True,
+        )
+        auto_stop_utc_hour = self._context_or_env_int(
+            "analytics_auto_stop_utc_hour",
+            "ANALYTICS_AUTO_STOP_UTC_HOUR",
+            22,
+        )
+        if not 0 <= auto_stop_utc_hour <= 23:
+            raise ValueError(
+                "analytics_auto_stop_utc_hour must be an integer between 0 and 23."
+            )
 
         postgres_db = self._context_or_env(
             "analytics_postgres_db",
@@ -108,71 +125,101 @@ class AnalyticsStack(Stack):
             )
 
         user_data = ec2.UserData.for_linux()
-        user_data.add_commands(
+        user_data_commands = [
             "set -euxo pipefail",
             "dnf update -y",
             "dnf install -y docker curl",
-            "systemctl enable --now docker",
-            "mkdir -p /usr/local/lib/docker/cli-plugins",
-            (
-                "if ! docker compose version >/dev/null 2>&1; then "
-                "ARCH=$(uname -m); "
-                "case \"$ARCH\" in x86_64) COMPOSE_ARCH=x86_64 ;; "
-                "aarch64) COMPOSE_ARCH=aarch64 ;; "
-                "*) echo \"Unsupported architecture: $ARCH\" >&2; exit 1 ;; "
-                "esac; "
-                "curl -SL "
-                "https://github.com/docker/compose/releases/download/v2.29.7/"
-                "docker-compose-linux-${COMPOSE_ARCH} "
-                "-o /usr/local/lib/docker/cli-plugins/docker-compose; "
-                "chmod +x /usr/local/lib/docker/cli-plugins/docker-compose; "
-                "fi"
-            ),
-            "mkdir -p /opt/social-analytics",
-            "cd /opt/social-analytics",
-            self._write_file_command("docker-compose.yml", compose_content),
-            self._write_file_command(
-                ".env",
-                "\n".join(
-                    [
-                        f"POSTGRES_DB={postgres_db}",
-                        f"POSTGRES_USER={postgres_user}",
-                        f"POSTGRES_PASSWORD={postgres_password}",
-                        f"SUPERSET_ADMIN_USERNAME={superset_admin_username}",
-                        f"SUPERSET_ADMIN_PASSWORD={superset_admin_password}",
-                        "SUPERSET_ADMIN_FIRST_NAME=Admin",
-                        "SUPERSET_ADMIN_LAST_NAME=User",
-                        "SUPERSET_ADMIN_EMAIL=admin@example.com",
-                        f"SUPERSET_SECRET_KEY={superset_secret_key}",
-                    ]
+        ]
+        if auto_stop_enabled:
+            user_data_commands.extend(
+                [
+                    "# Demo cost guardrail: keep cron in UTC for predictable auto-stop.",
+                    "timedatectl set-timezone UTC",
+                    "dnf install -y cronie",
+                    "systemctl enable --now crond",
+                    self._write_file_command(
+                        "/etc/cron.d/social-analytics-auto-stop",
+                        "\n".join(
+                            [
+                                (
+                                    "# Demo cost guardrail: stop this EC2 instance "
+                                    "daily to reduce accidental runtime cost."
+                                ),
+                                (
+                                    f"0 {auto_stop_utc_hour} * * * root "
+                                    "/sbin/shutdown -h now"
+                                ),
+                            ]
+                        ),
+                    ),
+                    "chmod 644 /etc/cron.d/social-analytics-auto-stop",
+                ]
+            )
+        user_data_commands.extend(
+            [
+                "systemctl enable --now docker",
+                "mkdir -p /usr/local/lib/docker/cli-plugins",
+                (
+                    "if ! docker compose version >/dev/null 2>&1; then "
+                    "ARCH=$(uname -m); "
+                    "case \"$ARCH\" in x86_64) COMPOSE_ARCH=x86_64 ;; "
+                    "aarch64) COMPOSE_ARCH=aarch64 ;; "
+                    "*) echo \"Unsupported architecture: $ARCH\" >&2; exit 1 ;; "
+                    "esac; "
+                    "curl -SL "
+                    "https://github.com/docker/compose/releases/download/v2.29.7/"
+                    "docker-compose-linux-${COMPOSE_ARCH} "
+                    "-o /usr/local/lib/docker/cli-plugins/docker-compose; "
+                    "chmod +x /usr/local/lib/docker/cli-plugins/docker-compose; "
+                    "fi"
                 ),
-            ),
-            self._write_file_command("superset-init.sh", superset_init_content),
-            self._write_file_command("schema.sql", schema_content),
-            "chmod 600 .env",
-            "chmod +x superset-init.sh",
-            "docker compose pull",
-            "docker compose up -d",
-            (
-                "POSTGRES_READY=0; "
-                "for attempt in $(seq 1 60); do "
-                "if docker inspect -f '{{.State.Health.Status}}' "
-                "social-analytics-postgres | grep -q healthy; then "
-                "POSTGRES_READY=1; break; "
-                "fi; "
-                "sleep 5; "
-                "done; "
-                "if [ \"$POSTGRES_READY\" != \"1\" ]; then "
-                "docker logs social-analytics-postgres; "
-                "exit 1; "
-                "fi"
-            ),
-            (
-                "docker compose exec -T postgres sh -c "
-                "'psql -v ON_ERROR_STOP=1 -U \"$POSTGRES_USER\" "
-                "-d \"$POSTGRES_DB\"' < schema.sql"
-            ),
+                "mkdir -p /opt/social-analytics",
+                "cd /opt/social-analytics",
+                self._write_file_command("docker-compose.yml", compose_content),
+                self._write_file_command(
+                    ".env",
+                    "\n".join(
+                        [
+                            f"POSTGRES_DB={postgres_db}",
+                            f"POSTGRES_USER={postgres_user}",
+                            f"POSTGRES_PASSWORD={postgres_password}",
+                            f"SUPERSET_ADMIN_USERNAME={superset_admin_username}",
+                            f"SUPERSET_ADMIN_PASSWORD={superset_admin_password}",
+                            "SUPERSET_ADMIN_FIRST_NAME=Admin",
+                            "SUPERSET_ADMIN_LAST_NAME=User",
+                            "SUPERSET_ADMIN_EMAIL=admin@example.com",
+                            f"SUPERSET_SECRET_KEY={superset_secret_key}",
+                        ]
+                    ),
+                ),
+                self._write_file_command("superset-init.sh", superset_init_content),
+                self._write_file_command("schema.sql", schema_content),
+                "chmod 600 .env",
+                "chmod +x superset-init.sh",
+                "docker compose pull",
+                "docker compose up -d",
+                (
+                    "POSTGRES_READY=0; "
+                    "for attempt in $(seq 1 60); do "
+                    "if docker inspect -f '{{.State.Health.Status}}' "
+                    "social-analytics-postgres | grep -q healthy; then "
+                    "POSTGRES_READY=1; break; "
+                    "fi; "
+                    "sleep 5; "
+                    "done; "
+                    "if [ \"$POSTGRES_READY\" != \"1\" ]; then "
+                    "docker logs social-analytics-postgres; "
+                    "exit 1; "
+                    "fi"
+                ),
+                (
+                    "docker compose exec -T postgres sh -c "
+                    "'psql -v ON_ERROR_STOP=1 -U \"$POSTGRES_USER\" "
+                    "-d \"$POSTGRES_DB\"' < schema.sql"
+                ),
+            ]
         )
+        user_data.add_commands(*user_data_commands)
 
         instance_kwargs = {}
         if key_name:
@@ -182,15 +229,15 @@ class AnalyticsStack(Stack):
             self,
             "AnalyticsInstance",
             instance_name="social-analytics-ec2",
-            instance_type=ec2.InstanceType.of(
-                ec2.InstanceClass.T3,
-                ec2.InstanceSize.SMALL,
-            ),
+            instance_type=ec2.InstanceType(instance_type_value),
             machine_image=ec2.MachineImage.latest_amazon_linux2023(),
             vpc=vpc,
             vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
             security_group=security_group,
             associate_public_ip_address=True,
+            instance_initiated_shutdown_behavior=(
+                ec2.InstanceInitiatedShutdownBehavior.STOP
+            ),
             user_data=user_data,
             **instance_kwargs,
         )
@@ -229,12 +276,49 @@ class AnalyticsStack(Stack):
             "PostgresPort",
             value="5432",
         )
+        if auto_stop_enabled:
+            CfnOutput(
+                self,
+                "AnalyticsAutoStopUtcHour",
+                value=str(auto_stop_utc_hour),
+            )
 
     def _context_or_env(self, context_key: str, env_key: str, default: str) -> str:
         value = self.node.try_get_context(context_key)
         if value is None:
             value = os.getenv(env_key, default)
         return str(value)
+
+    def _context_or_env_bool(
+        self, context_key: str, env_key: str, default: bool
+    ) -> bool:
+        raw_value = self.node.try_get_context(context_key)
+        if raw_value is None:
+            raw_value = os.getenv(env_key)
+        if raw_value is None:
+            return default
+        if isinstance(raw_value, bool):
+            return raw_value
+
+        normalized_value = str(raw_value).strip().lower()
+        if normalized_value in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized_value in {"0", "false", "no", "n", "off"}:
+            return False
+        raise ValueError(f"{context_key} must be true or false.")
+
+    def _context_or_env_int(
+        self, context_key: str, env_key: str, default: int
+    ) -> int:
+        raw_value = self.node.try_get_context(context_key)
+        if raw_value is None:
+            raw_value = os.getenv(env_key)
+        if raw_value is None:
+            return default
+        try:
+            return int(str(raw_value))
+        except ValueError as error:
+            raise ValueError(f"{context_key} must be an integer.") from error
 
     def _write_file_command(self, path: str, content: str) -> str:
         return f"cat > {path} <<'EOF_SOCIAL_ANALYTICS'\n{content.rstrip()}\nEOF_SOCIAL_ANALYTICS"
