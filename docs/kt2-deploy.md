@@ -1,6 +1,6 @@
 # KT2 Silver Deploy Guide
 
-This guide covers the Student 1 infrastructure workflow for the KT2 silver layer.
+This guide covers the silver layer infrastructure and runtime workflow.
 
 ## Scope
 
@@ -55,33 +55,43 @@ If an older monolithic `InfrastructureStack` is still deployed in AWS, coordinat
 
 ## Manual Invoke
 
-Hacker News silver placeholder:
+Hacker News silver:
 
 ```bash
+printf '%s' '{"data_date":"2026-05-18","ingest_date":"2026-07-01","mode":"overwrite_partitions"}' > hn_silver_runtime_event.json
+
 aws lambda invoke \
   --function-name normalize-hn-silver \
-  --payload fileb://../lambdas/hn_silver_normalization/test_event.json \
+  --payload fileb://hn_silver_runtime_event.json \
   hn_silver_response.json \
-  --region eu-central-1
+  --region eu-central-1 \
+  --cli-read-timeout 900
 
 cat hn_silver_response.json
 ```
 
-X silver placeholder:
+Use an `ingest_date` that exists under `bronze/hacker-news/`. The example above
+matches a manual HN bronze ingestion run for `data_date=2026-05-18`.
+
+X silver:
 
 ```bash
 aws lambda invoke \
   --function-name normalize-x-silver \
   --payload fileb://../lambdas/x_silver_normalization/test_event.json \
   x_silver_response.json \
-  --region eu-central-1
+  --region eu-central-1 \
+  --cli-read-timeout 900
 
 cat x_silver_response.json
 ```
 
-## S3 Verification
+The X test event uses the synthetic seed dataset at
+`bronze/x/ingest_date=2026-05-30/dataset_name=x-synthetic-seed/tweets.json`.
+Upload `datasets/x/tweets.json` and `datasets/x/metadata.json` to that prefix
+before invoking `normalize-x-silver`.
 
-After Student 2 and Student 3 implement normalization and Parquet writes:
+## S3 Verification
 
 ```bash
 aws s3 ls s3://<bucket-name>/silver/ --recursive --region eu-central-1
@@ -90,13 +100,20 @@ aws s3 ls s3://<bucket-name>/silver/ --recursive --region eu-central-1
 Expected silver prefixes:
 
 ```text
-silver/users/
+silver/users/platform=<platform>/year=YYYY/month=MM/day=DD/
 silver/posts/
 silver/post_tags/
 silver/post_relations/
 silver/data_quality_report/
 ```
 
+HN silver enriches active authors from the Hacker News user API and writes
+`karma_score` and `user_created_at_utc` in the `silver/users/` dataset. These
+fields are required by the HN gold top/bottom karma metrics.
+
 ## Notes
 
-The current Student 1 delivery creates infrastructure and placeholder Lambda entrypoints. Actual HN/X normalization, Parquet writing, and Data Quality output are implemented by Student 2 and Student 3.
+The silver Lambdas perform real normalization and Parquet writes. Runtime
+verification should show non-zero row counts for `users`, `posts`, `post_tags`,
+`post_relations`, and `data_quality_report` after the matching bronze inputs
+exist in S3.

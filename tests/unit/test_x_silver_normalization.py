@@ -86,6 +86,11 @@ def test_normalize_x_users_deduplicates_and_maps_fields():
     assert users[0]["followers_count"] == 12
     assert users[0]["is_verified"] is True
     assert users[0]["karma_score"] is None
+    assert (users[0]["year"], users[0]["month"], users[0]["day"]) == (
+        "2026",
+        "05",
+        "20",
+    )
     assert users[0]["user_id"]
     assert users[0]["user_id"] == handler.normalize_x_users(
         tweets, DATA_DATE, INGEST_DATE, PROCESSED_AT_UTC

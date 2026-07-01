@@ -108,6 +108,22 @@ def extract_date_parts(created_at_utc):
     }
 
 
+def extract_data_date_parts(data_date):
+    if not isinstance(data_date, str) or not data_date.strip():
+        return {"year": None, "month": None, "day": None}
+
+    try:
+        parsed = dt.date.fromisoformat(data_date.strip())
+    except ValueError:
+        return {"year": None, "month": None, "day": None}
+
+    return {
+        "year": f"{parsed.year:04d}",
+        "month": f"{parsed.month:02d}",
+        "day": f"{parsed.day:02d}",
+    }
+
+
 def stable_uuid(namespace, value):
     if value is None or value == "":
         return None
@@ -247,6 +263,7 @@ def deduplicate_rows(rows, key_fields):
 def normalize_x_users(tweets, data_date, ingest_date, processed_at_utc):
     normalized_users = []
     seen_users = set()
+    date_parts = extract_data_date_parts(data_date)
 
     for tweet in tweets or []:
         if not isinstance(tweet, dict):
@@ -300,6 +317,9 @@ def normalize_x_users(tweets, data_date, ingest_date, processed_at_utc):
                 "following_count": safe_int(user.get("following_count")),
                 "is_verified": is_verified,
                 "user_created_at_utc": parse_iso_timestamp(user.get("created_at")),
+                "year": date_parts["year"],
+                "month": date_parts["month"],
+                "day": date_parts["day"],
                 "data_date": data_date,
                 "ingest_date": ingest_date,
                 "silver_processed_at_utc": processed_at_utc,
@@ -599,7 +619,7 @@ def write_x_silver_tables(
     bucket, silver_prefix, normalized_tables, mode="overwrite_partitions"
 ):
     partition_columns = {
-        "users": ["platform"],
+        "users": ["platform", "year", "month", "day"],
         "posts": ["platform", "year", "month", "day"],
         "post_tags": ["platform", "year", "month", "day"],
         "post_relations": ["platform", "year", "month", "day"],
