@@ -1,3 +1,7 @@
+import json
+from functools import lru_cache
+from pathlib import Path
+
 import aws_cdk as core
 import aws_cdk.assertions as assertions
 
@@ -7,6 +11,7 @@ from infrastructure.gold_stack import GoldStack
 from infrastructure.silver_stack import SilverStack
 
 
+@lru_cache(maxsize=1)
 def _stacks():
     app = core.App()
     data_lake_stack = DataLakeStack(app, "data-lake")
@@ -216,6 +221,95 @@ def test_gold_lambdas_include_aws_sdk_pandas_layer():
     )
 
 
+def test_gold_to_postgres_loader_has_expected_configuration():
+    _, _, _, gold_template = _stacks()
+
+    gold_template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "FunctionName": "gold-to-postgres-loader",
+            "Handler": "handler.lambda_handler",
+            "Runtime": "python3.12",
+            "Architectures": ["x86_64"],
+            "Timeout": 300,
+            "MemorySize": 1024,
+            "Environment": {
+                "Variables": {
+                    "DATA_LAKE_BUCKET": assertions.Match.any_value(),
+                    "GOLD_PREFIX": "gold",
+                    "POSTGRES_HOST": assertions.Match.any_value(),
+                    "POSTGRES_PORT": assertions.Match.any_value(),
+                    "POSTGRES_DATABASE": assertions.Match.any_value(),
+                    "POSTGRES_USER": assertions.Match.any_value(),
+                    "POSTGRES_PASSWORD": assertions.Match.any_value(),
+                }
+            },
+        },
+    )
+
+
+def test_gold_to_postgres_loader_includes_aws_sdk_pandas_layer():
+    _, _, _, gold_template = _stacks()
+    expected_layer = [
+        "arn:aws:lambda:eu-central-1:336392948345:layer:AWSSDKPandas-Python312:27"
+    ]
+
+    gold_template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "FunctionName": "gold-to-postgres-loader",
+            "Layers": expected_layer,
+        },
+    )
+
+
+def test_gold_to_postgres_loader_has_gold_s3_read_access():
+    _, _, _, gold_template = _stacks()
+    template_json = gold_template.to_json()
+
+    statements = []
+    for resource in template_json["Resources"].values():
+        if resource["Type"] != "AWS::IAM::Policy":
+            continue
+        policy_statements = resource["Properties"]["PolicyDocument"]["Statement"]
+        statements.extend(policy_statements)
+
+    assert any(
+        statement["Effect"] == "Allow"
+        and "s3:GetObject*" in _as_list(statement["Action"])
+        and "gold/*" in repr(statement["Resource"])
+        for statement in statements
+    )
+
+
+def test_gold_to_postgres_loader_output_is_synthesized():
+    _, _, _, gold_template = _stacks()
+
+    gold_template.has_output(
+        "GoldToPostgresLoaderFunctionName",
+        {"Value": assertions.Match.any_value()},
+    )
+
+
+def test_gold_to_postgres_loader_sample_event_is_valid_json():
+    repo_root = Path(__file__).resolve().parents[3]
+    event_path = (
+        repo_root
+        / "lambdas"
+        / "gold_to_postgres_loader"
+        / "test_event.example.json"
+    )
+
+    event = json.loads(event_path.read_text(encoding="utf-8"))
+
+    assert event["bucket"] == "replace-with-data-lake-bucket-name"
+    assert event["gold_prefix"] == "gold"
+    assert event["data_date"] == "2026-05-20"
+    assert event["platforms"] == ["hacker-news", "x"]
+    assert event["datasets"] is None
+    assert event["mode"] == "replace_date"
+
+
 def test_gold_iam_policy_has_silver_read_and_gold_write_access():
     _, _, _, gold_template = _stacks()
     gold_template.has_resource_properties(
@@ -255,3 +349,9 @@ def test_iam_policies_do_not_grant_admin_wildcards():
                 assert "*" not in actions
                 assert "s3:*" not in actions
                 assert "iam:*" not in actions
+
+
+def _as_list(value):
+    if isinstance(value, list):
+        return value
+    return [value]
