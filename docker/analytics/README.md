@@ -51,3 +51,33 @@ SQLAlchemy URI:
 ```text
 postgresql+psycopg2://superset:superset@postgres:5432/social_analytics
 ```
+
+## Run Local Loader Smoke Test
+
+Start the local analytics services from `docker/analytics`:
+
+```bash
+docker compose up -d
+```
+
+Apply the PostgreSQL schema from the repository root:
+
+```bash
+docker exec -i social-analytics-postgres \
+  psql -U superset -d social_analytics < database/schema.sql
+```
+
+Install the local loader dependency if needed:
+
+```bash
+pip install -r lambdas/gold_to_postgres_loader/requirements.txt
+```
+
+Run the smoke test from the repository root:
+
+```bash
+python scripts/smoke_test_gold_to_postgres.py
+```
+
+After it passes, refresh the PyCharm database view or refresh the Superset
+datasets to inspect the inserted sample rows.
