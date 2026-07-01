@@ -87,7 +87,17 @@ HN_GOLD_PREFIX=gold/hacker-news
 X_GOLD_PREFIX=gold/x
 ```
 
-Student 1 moze zavrsiti ovaj deo i pre nego sto su sve silver transformacije zavrsene. U tom slucaju gold Lambda handler moze biti placeholder koji jasno kaze da prava agregacija zavisi od dostupnih silver podataka.
+Gold Lambda handleri sada rade prave agregacije nad silver Parquet datasetima.
+Posto su `silver/users`, `silver/posts`, `silver/post_tags` i
+`silver/data_quality_report` zajednicki folderi za obe platforme, gold citanje
+mora koristiti platform partition filter:
+
+```text
+build-hn-gold cita samo platform=HackerNews
+build-x-gold cita samo platform=X
+```
+
+Ovo sprecava spajanje HN i X Parquet sema pre filtriranja.
 
 Definition of done za Student 1:
 
@@ -98,7 +108,9 @@ Definition of done za Student 1:
 - env var ugovor je dokumentovan;
 - CDK testovi prolaze;
 - `cdk synth` prolazi;
-- postoji deploy dokumentacija.
+- postoji deploy dokumentacija;
+- HN i X gold runtime invoke vracaju `status=success`;
+- S3 sadrzi Parquet fajlove pod `gold/hacker-news/` i `gold/x/`.
 
 ## Student 2 - Hacker News gold
 
@@ -121,21 +133,23 @@ silver/data_quality_report/
 Izlaz:
 
 ```text
-gold/hacker-news/daily_metrics/
-gold/hacker-news/top_posts/
-gold/hacker-news/top_users/
-gold/hacker-news/post_type_distribution/
+gold/hacker-news/daily_item_counts/
+gold/hacker-news/daily_users_metric/
+gold/hacker-news/top_story_posts/
+gold/hacker-news/top_job_posts/
+gold/hacker-news/top_users_by_karma/
+gold/hacker-news/bottom_users_by_karma/
 gold/hacker-news/data_quality_summary/
 ```
 
 Predlozene metrike:
 
-- broj HN postova po danu;
-- broj komentara po danu;
-- top postovi po score vrednosti;
-- top korisnici po broju postova;
 - distribucija tipova objava: story, ask, job, poll, comment;
-- prosecan score po danu;
+- broj Hacker News korisnika po danu;
+- top 10 story objava po score vrednosti;
+- top 10 job objava po score vrednosti;
+- top 10 korisnika sa najvecim karma_score;
+- top 10 korisnika sa najmanjim karma_score;
 - data quality summary za Hacker News.
 
 Definition of done za Student 2:
@@ -167,20 +181,19 @@ silver/data_quality_report/
 Izlaz:
 
 ```text
-gold/x/daily_metrics/
-gold/x/top_posts/
-gold/x/top_users/
+gold/x/daily_users_metric/
+gold/x/top_users_by_followers/
+gold/x/top_posts_by_engagement/
 gold/x/hashtag_trends/
 gold/x/data_quality_summary/
 ```
 
 Predlozene metrike:
 
-- broj X postova po danu;
-- top postovi po like_count;
-- top postovi po retweet_count;
+- broj X korisnika po danu;
+- top 10 X korisnika po followers_count;
+- top postovi po engagement score-u;
 - top hashtagovi po danu;
-- broj verifikovanih korisnika;
 - engagement score po postu;
 - data quality summary za X.
 
@@ -216,11 +229,15 @@ gold/x/<table_name>/
 Predlozene gold tabele:
 
 ```text
-daily_metrics
-top_posts
-top_users
-tag_trends
-post_type_distribution
+daily_item_counts
+daily_users_metric
+top_story_posts
+top_job_posts
+top_users_by_karma
+bottom_users_by_karma
+top_users_by_followers
+top_posts_by_engagement
+hashtag_trends
 data_quality_summary
 ```
 
