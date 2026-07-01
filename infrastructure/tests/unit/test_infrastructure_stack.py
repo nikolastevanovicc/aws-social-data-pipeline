@@ -1,12 +1,19 @@
+import json
+from functools import lru_cache
+from pathlib import Path
+
 import aws_cdk as core
 import aws_cdk.assertions as assertions
+import pytest
 
+from infrastructure.analytics_stack import AnalyticsStack
 from infrastructure.bronze_stack import BronzeStack
 from infrastructure.data_lake_stack import DataLakeStack
 from infrastructure.gold_stack import GoldStack
 from infrastructure.silver_stack import SilverStack
 
 
+@lru_cache(maxsize=1)
 def _stacks():
     app = core.App()
     data_lake_stack = DataLakeStack(app, "data-lake")
@@ -31,6 +38,29 @@ def _stacks():
         assertions.Template.from_stack(silver_stack),
         assertions.Template.from_stack(gold_stack),
     )
+
+
+@lru_cache(maxsize=1)
+def _analytics_stack():
+    return _analytics_template()
+
+
+def _analytics_template(context=None):
+    default_context = {
+        "analytics_allowed_cidr": "0.0.0.0/0",
+        "analytics_postgres_password": "dummy",
+        "analytics_superset_secret_key": "dummy",
+    }
+    if context is not None:
+        default_context.update(context)
+
+    app = core.App(context=default_context)
+    analytics_stack = AnalyticsStack(app, "analytics")
+    return assertions.Template.from_stack(analytics_stack)
+
+
+def _all_templates():
+    return (*_stacks(), _analytics_stack())
 
 
 def test_s3_bucket_has_expected_security_properties():
@@ -216,6 +246,95 @@ def test_gold_lambdas_include_aws_sdk_pandas_layer():
     )
 
 
+def test_gold_to_postgres_loader_has_expected_configuration():
+    _, _, _, gold_template = _stacks()
+
+    gold_template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "FunctionName": "gold-to-postgres-loader",
+            "Handler": "handler.lambda_handler",
+            "Runtime": "python3.12",
+            "Architectures": ["x86_64"],
+            "Timeout": 300,
+            "MemorySize": 1024,
+            "Environment": {
+                "Variables": {
+                    "DATA_LAKE_BUCKET": assertions.Match.any_value(),
+                    "GOLD_PREFIX": "gold",
+                    "POSTGRES_HOST": assertions.Match.any_value(),
+                    "POSTGRES_PORT": assertions.Match.any_value(),
+                    "POSTGRES_DATABASE": assertions.Match.any_value(),
+                    "POSTGRES_USER": assertions.Match.any_value(),
+                    "POSTGRES_PASSWORD": assertions.Match.any_value(),
+                }
+            },
+        },
+    )
+
+
+def test_gold_to_postgres_loader_includes_aws_sdk_pandas_layer():
+    _, _, _, gold_template = _stacks()
+    expected_layer = [
+        "arn:aws:lambda:eu-central-1:336392948345:layer:AWSSDKPandas-Python312:27"
+    ]
+
+    gold_template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "FunctionName": "gold-to-postgres-loader",
+            "Layers": expected_layer,
+        },
+    )
+
+
+def test_gold_to_postgres_loader_has_gold_s3_read_access():
+    _, _, _, gold_template = _stacks()
+    template_json = gold_template.to_json()
+
+    statements = []
+    for resource in template_json["Resources"].values():
+        if resource["Type"] != "AWS::IAM::Policy":
+            continue
+        policy_statements = resource["Properties"]["PolicyDocument"]["Statement"]
+        statements.extend(policy_statements)
+
+    assert any(
+        statement["Effect"] == "Allow"
+        and "s3:GetObject*" in _as_list(statement["Action"])
+        and "gold/*" in repr(statement["Resource"])
+        for statement in statements
+    )
+
+
+def test_gold_to_postgres_loader_output_is_synthesized():
+    _, _, _, gold_template = _stacks()
+
+    gold_template.has_output(
+        "GoldToPostgresLoaderFunctionName",
+        {"Value": assertions.Match.any_value()},
+    )
+
+
+def test_gold_to_postgres_loader_sample_event_is_valid_json():
+    repo_root = Path(__file__).resolve().parents[3]
+    event_path = (
+        repo_root
+        / "lambdas"
+        / "gold_to_postgres_loader"
+        / "test_event.example.json"
+    )
+
+    event = json.loads(event_path.read_text(encoding="utf-8"))
+
+    assert event["bucket"] == "replace-with-data-lake-bucket-name"
+    assert event["gold_prefix"] == "gold"
+    assert event["data_date"] == "2026-05-20"
+    assert event["platforms"] == ["hacker-news", "x"]
+    assert event["datasets"] is None
+    assert event["mode"] == "replace_date"
+
+
 def test_gold_iam_policy_has_silver_read_and_gold_write_access():
     _, _, _, gold_template = _stacks()
     gold_template.has_resource_properties(
@@ -241,17 +360,168 @@ def test_gold_iam_policy_has_silver_read_and_gold_write_access():
 
 
 def test_iam_policies_do_not_grant_admin_wildcards():
-    for template in _stacks():
+    for template in _all_templates():
         template_json = template.to_json()
         policies = template_json["Resources"]
 
         for resource in policies.values():
-            if resource["Type"] != "AWS::IAM::Policy":
+            if resource["Type"] not in {"AWS::IAM::Policy", "AWS::IAM::ManagedPolicy"}:
                 continue
-            for statement in resource["Properties"]["PolicyDocument"]["Statement"]:
+            policy_document = resource["Properties"]["PolicyDocument"]
+            for statement in policy_document["Statement"]:
                 actions = statement["Action"]
                 if isinstance(actions, str):
                     actions = [actions]
                 assert "*" not in actions
                 assert "s3:*" not in actions
                 assert "iam:*" not in actions
+                assert "ec2:*" not in actions
+
+
+def test_analytics_stack_synthesizes_ec2_instance():
+    analytics_template = _analytics_stack()
+
+    analytics_template.resource_count_is("AWS::EC2::Instance", 1)
+    analytics_template.has_resource_properties(
+        "AWS::EC2::Instance",
+        {
+            "InstanceType": "t3.small",
+            "Tags": assertions.Match.array_with(
+                [{"Key": "Name", "Value": "social-analytics-ec2"}]
+            ),
+        },
+    )
+
+
+def test_analytics_instance_type_can_be_configured():
+    analytics_template = _analytics_template({"analytics_instance_type": "t3.micro"})
+
+    analytics_template.has_resource_properties(
+        "AWS::EC2::Instance",
+        {"InstanceType": "t3.micro"},
+    )
+
+
+def test_analytics_security_group_allows_superset_and_postgres_ports():
+    analytics_template = _analytics_stack()
+
+    analytics_template.has_resource_properties(
+        "AWS::EC2::SecurityGroup",
+        {
+            "SecurityGroupIngress": assertions.Match.array_with(
+                [
+                    assertions.Match.object_like(
+                        {
+                            "IpProtocol": "tcp",
+                            "FromPort": 8088,
+                            "ToPort": 8088,
+                            "CidrIp": "0.0.0.0/0",
+                        }
+                    )
+                ]
+            )
+        },
+    )
+    analytics_template.has_resource_properties(
+        "AWS::EC2::SecurityGroup",
+        {
+            "SecurityGroupIngress": assertions.Match.array_with(
+                [
+                    assertions.Match.object_like(
+                        {
+                            "IpProtocol": "tcp",
+                            "FromPort": 5432,
+                            "ToPort": 5432,
+                            "CidrIp": "0.0.0.0/0",
+                        }
+                    )
+                ]
+            )
+        },
+    )
+
+
+def test_analytics_outputs_are_synthesized():
+    analytics_template = _analytics_stack()
+
+    for output_name in [
+        "AnalyticsInstanceId",
+        "AnalyticsPublicIp",
+        "AnalyticsPublicDnsName",
+        "SupersetUrl",
+        "PostgresHost",
+        "PostgresPort",
+        "AnalyticsAutoStopUtcHour",
+    ]:
+        analytics_template.has_output(
+            output_name,
+            {"Value": assertions.Match.any_value()},
+        )
+
+
+def test_analytics_user_data_is_synthesized():
+    analytics_template = _analytics_stack()
+    template_json = analytics_template.to_json()
+
+    instances = [
+        resource
+        for resource in template_json["Resources"].values()
+        if resource["Type"] == "AWS::EC2::Instance"
+    ]
+
+    assert len(instances) == 1
+    user_data = repr(instances[0]["Properties"].get("UserData"))
+    assert "docker compose up -d --build" in user_data
+    assert "social-analytics-postgres" in user_data
+    assert "superset/Dockerfile" in user_data
+    assert "psycopg2-binary" in user_data
+    assert "schema.sql" in user_data
+    assert "views.sql" in user_data
+    assert user_data.index("< schema.sql") < user_data.index("< views.sql")
+
+
+def test_analytics_user_data_contains_default_shutdown_cron():
+    analytics_template = _analytics_stack()
+    user_data = _analytics_instance_user_data(analytics_template)
+
+    assert "Demo cost guardrail" in user_data
+    assert "social-analytics-auto-stop" in user_data
+    assert "/sbin/shutdown -h now" in user_data
+    assert "0 22 * * * root" in user_data
+    assert "docker compose pull postgres" in user_data
+    assert user_data.index("social-analytics-auto-stop") < user_data.index(
+        "docker compose pull postgres"
+    )
+
+
+def test_analytics_auto_stop_can_be_disabled():
+    analytics_template = _analytics_template({"analytics_auto_stop_enabled": "false"})
+    template_json = analytics_template.to_json()
+    user_data = _analytics_instance_user_data(analytics_template)
+
+    assert "social-analytics-auto-stop" not in user_data
+    assert "/sbin/shutdown -h now" not in user_data
+    assert "AnalyticsAutoStopUtcHour" not in template_json.get("Outputs", {})
+
+
+def test_analytics_invalid_auto_stop_hour_raises_value_error():
+    with pytest.raises(ValueError, match="between 0 and 23"):
+        _analytics_template({"analytics_auto_stop_utc_hour": "24"})
+
+
+def _analytics_instance_user_data(analytics_template):
+    template_json = analytics_template.to_json()
+    instances = [
+        resource
+        for resource in template_json["Resources"].values()
+        if resource["Type"] == "AWS::EC2::Instance"
+    ]
+
+    assert len(instances) == 1
+    return repr(instances[0]["Properties"].get("UserData"))
+
+
+def _as_list(value):
+    if isinstance(value, list):
+        return value
+    return [value]

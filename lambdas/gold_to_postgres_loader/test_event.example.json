@@ -1,0 +1,13 @@
+{
+  "bucket": "replace-with-data-lake-bucket-name",
+  "gold_prefix": "gold",
+  "data_date": "2026-05-20",
+  "platforms": ["hacker-news", "x"],
+  "datasets": null,
+  "mode": "replace_date",
+  "postgres_host": "replace-with-postgres-host",
+  "postgres_port": 5432,
+  "postgres_database": "social_analytics",
+  "postgres_user": "superset",
+  "postgres_password": "replace-with-password"
+}
