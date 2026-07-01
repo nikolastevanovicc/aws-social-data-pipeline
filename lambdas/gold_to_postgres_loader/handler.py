@@ -344,6 +344,99 @@ def build_gold_partition_filter_values(platform, dataset_name, data_date):
     }
 
 
+def build_s3_uri(bucket, key_or_prefix):
+    if not bucket:
+        raise ValueError("DATA_LAKE_BUCKET is required")
+    if not key_or_prefix:
+        raise ValueError("S3 key or prefix is required")
+
+    normalized_bucket = str(bucket).strip().strip("/")
+    normalized_key = str(key_or_prefix).strip().lstrip("/")
+    if not normalized_bucket:
+        raise ValueError("DATA_LAKE_BUCKET is required")
+    if not normalized_key:
+        raise ValueError("S3 key or prefix is required")
+
+    return f"s3://{normalized_bucket}/{normalized_key}"
+
+
+def read_parquet_rows_from_s3(s3_uri, partition_filter_values=None):
+    import awswrangler as wr
+
+    read_kwargs = {
+        "path": s3_uri,
+        "dataset": True,
+    }
+
+    if partition_filter_values is not None:
+
+        def partition_filter(partitions):
+            return all(
+                str(partitions.get(key)) == str(expected_value)
+                for key, expected_value in partition_filter_values.items()
+            )
+
+        read_kwargs["partition_filter"] = partition_filter
+
+    df = wr.s3.read_parquet(**read_kwargs)
+    if df.empty:
+        return []
+
+    return df.to_dict(orient="records")
+
+
+def read_gold_dataset_rows(bucket, gold_prefix, platform, dataset_name, data_date):
+    postgres_table = get_postgres_table_name(platform, dataset_name)
+    root_prefix = build_gold_s3_prefix(gold_prefix, platform, dataset_name, data_date)
+    s3_uri = build_s3_uri(bucket, root_prefix)
+    partition_filter_values = build_gold_partition_filter_values(
+        platform,
+        dataset_name,
+        data_date,
+    )
+    rows = read_parquet_rows_from_s3(s3_uri, partition_filter_values)
+
+    return {
+        "platform": platform,
+        "dataset_name": dataset_name,
+        "postgres_table": postgres_table,
+        "s3_uri": s3_uri,
+        "partition_filter_values": partition_filter_values,
+        "rows": rows,
+        "row_count": len(rows),
+    }
+
+
+def read_requested_gold_datasets(
+    bucket,
+    gold_prefix,
+    data_date,
+    platforms,
+    requested_datasets=None,
+):
+    results = {}
+    for platform in platforms:
+        results[platform] = {}
+        dataset_names = resolve_datasets_for_platform(platform, requested_datasets)
+        for dataset_name in dataset_names:
+            dataset_result = read_gold_dataset_rows(
+                bucket,
+                gold_prefix,
+                platform,
+                dataset_name,
+                data_date,
+            )
+            results[platform][dataset_name] = {
+                "postgres_table": dataset_result["postgres_table"],
+                "s3_uri": dataset_result["s3_uri"],
+                "partition_filter_values": dataset_result["partition_filter_values"],
+                "row_count": dataset_result["row_count"],
+                "rows": dataset_result["rows"],
+            }
+
+    return results
+
+
 def get_table_columns(table_name):
     columns = POSTGRES_TABLE_COLUMNS.get(table_name)
     if columns is None:
@@ -377,17 +470,38 @@ def row_to_insert_values(row, table_name):
 
 def lambda_handler(event, context):
     options = resolve_loader_options(event)
-    datasets_by_platform = {
-        platform: resolve_datasets_for_platform(platform, options["datasets"])
-        for platform in options["platforms"]
+    if not options["bucket"]:
+        raise ValueError("DATA_LAKE_BUCKET is required")
+
+    requested_tables = read_requested_gold_datasets(
+        options["bucket"],
+        options["gold_prefix"],
+        options["data_date"],
+        options["platforms"],
+        options["datasets"],
+    )
+    tables = {
+        platform: {
+            dataset_name: {
+                "postgres_table": dataset_result["postgres_table"],
+                "s3_uri": dataset_result["s3_uri"],
+                "partition_filter_values": dataset_result["partition_filter_values"],
+                "row_count": dataset_result["row_count"],
+            }
+            for dataset_name, dataset_result in platform_results.items()
+        }
+        for platform, platform_results in requested_tables.items()
     }
 
     return {
         "source": "gold-to-postgres",
-        "status": "configured",
+        "status": "loaded",
         "mode": options["mode"],
+        "bucket": options["bucket"],
+        "gold_prefix": options["gold_prefix"],
         "data_date": options["data_date"],
         "platforms": options["platforms"],
-        "datasets_by_platform": datasets_by_platform,
+        "datasets": options["datasets"],
+        "tables": tables,
         "request_id": getattr(context, "aws_request_id", None),
     }

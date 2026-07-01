@@ -222,6 +222,115 @@ def test_build_gold_partition_filter_values(platform, dataset_name, expected_val
     )
 
 
+def test_build_s3_uri():
+    assert (
+        handler.build_s3_uri("bucket", "gold/x/daily_users_metric/")
+        == "s3://bucket/gold/x/daily_users_metric/"
+    )
+    assert (
+        handler.build_s3_uri("bucket", "/gold/x/daily_users_metric/")
+        == "s3://bucket/gold/x/daily_users_metric/"
+    )
+
+
+def test_build_s3_uri_rejects_missing_bucket():
+    with pytest.raises(ValueError, match="DATA_LAKE_BUCKET is required"):
+        handler.build_s3_uri("", "gold/x/daily_users_metric/")
+
+
+def test_build_s3_uri_rejects_missing_key():
+    with pytest.raises(ValueError, match="S3 key or prefix is required"):
+        handler.build_s3_uri("bucket", "")
+
+
+def test_read_gold_dataset_rows(monkeypatch):
+    rows = [
+        {"date": DATA_DATE, "platform": "X", "total_users": 10},
+        {"date": DATA_DATE, "platform": "X", "total_users": 12},
+    ]
+    observed = {}
+
+    def fake_read_parquet_rows_from_s3(s3_uri, partition_filter_values=None):
+        observed["s3_uri"] = s3_uri
+        observed["partition_filter_values"] = partition_filter_values
+        return rows
+
+    monkeypatch.setattr(
+        handler,
+        "read_parquet_rows_from_s3",
+        fake_read_parquet_rows_from_s3,
+    )
+
+    result = handler.read_gold_dataset_rows(
+        "bucket",
+        "gold",
+        "x",
+        "daily_users_metric",
+        DATA_DATE,
+    )
+
+    assert result["platform"] == "x"
+    assert result["dataset_name"] == "daily_users_metric"
+    assert result["postgres_table"] == "x_daily_users_metric"
+    assert result["s3_uri"] == "s3://bucket/gold/x/daily_users_metric/"
+    assert result["partition_filter_values"] == {
+        "platform": "X",
+        "year": "2026",
+        "month": "05",
+        "day": "20",
+    }
+    assert result["row_count"] == 2
+    assert result["rows"] == rows
+    assert observed == {
+        "s3_uri": "s3://bucket/gold/x/daily_users_metric/",
+        "partition_filter_values": {
+            "platform": "X",
+            "year": "2026",
+            "month": "05",
+            "day": "20",
+        },
+    }
+
+
+def test_read_requested_gold_datasets(monkeypatch):
+    def fake_read_gold_dataset_rows(bucket, gold_prefix, platform, dataset_name, data_date):
+        return {
+            "platform": platform,
+            "dataset_name": dataset_name,
+            "postgres_table": f"{platform}_{dataset_name}",
+            "s3_uri": f"s3://{bucket}/{gold_prefix}/{platform}/{dataset_name}/",
+            "partition_filter_values": {"data_date": data_date},
+            "rows": [{"id": 1}],
+            "row_count": 1,
+        }
+
+    monkeypatch.setattr(
+        handler,
+        "read_gold_dataset_rows",
+        fake_read_gold_dataset_rows,
+    )
+
+    result = handler.read_requested_gold_datasets(
+        "bucket",
+        "gold",
+        DATA_DATE,
+        ["x"],
+        ["daily_users_metric"],
+    )
+
+    assert result == {
+        "x": {
+            "daily_users_metric": {
+                "postgres_table": "x_daily_users_metric",
+                "s3_uri": "s3://bucket/gold/x/daily_users_metric/",
+                "partition_filter_values": {"data_date": DATA_DATE},
+                "row_count": 1,
+                "rows": [{"id": 1}],
+            }
+        }
+    }
+
+
 def test_get_table_columns_x_daily_users_metric():
     columns = handler.get_table_columns("x_daily_users_metric")
 
@@ -297,9 +406,45 @@ def test_row_to_insert_values():
     ] is None
 
 
-def test_lambda_handler():
+def test_lambda_handler(monkeypatch):
+    def fake_read_requested_gold_datasets(
+        bucket,
+        gold_prefix,
+        data_date,
+        platforms,
+        requested_datasets=None,
+    ):
+        assert bucket == "bucket"
+        assert gold_prefix == "gold"
+        assert data_date == DATA_DATE
+        assert platforms == ["x"]
+        assert requested_datasets == ["daily_users_metric"]
+        return {
+            "x": {
+                "daily_users_metric": {
+                    "postgres_table": "x_daily_users_metric",
+                    "s3_uri": "s3://bucket/gold/x/daily_users_metric/",
+                    "partition_filter_values": {
+                        "platform": "X",
+                        "year": "2026",
+                        "month": "05",
+                        "day": "20",
+                    },
+                    "row_count": 2,
+                    "rows": [{"id": 1}, {"id": 2}],
+                }
+            }
+        }
+
+    monkeypatch.setattr(
+        handler,
+        "read_requested_gold_datasets",
+        fake_read_requested_gold_datasets,
+    )
+
     response = handler.lambda_handler(
         {
+            "bucket": "bucket",
             "data_date": DATA_DATE,
             "platforms": ["x"],
             "datasets": ["daily_users_metric"],
@@ -309,7 +454,19 @@ def test_lambda_handler():
     )
 
     assert response["source"] == "gold-to-postgres"
-    assert response["status"] == "configured"
+    assert response["status"] == "loaded"
+    assert response["bucket"] == "bucket"
     assert response["data_date"] == DATA_DATE
     assert response["platforms"] == ["x"]
-    assert response["datasets_by_platform"] == {"x": ["daily_users_metric"]}
+    assert response["tables"]["x"]["daily_users_metric"] == {
+        "postgres_table": "x_daily_users_metric",
+        "s3_uri": "s3://bucket/gold/x/daily_users_metric/",
+        "partition_filter_values": {
+            "platform": "X",
+            "year": "2026",
+            "month": "05",
+            "day": "20",
+        },
+        "row_count": 2,
+    }
+    assert "rows" not in response["tables"]["x"]["daily_users_metric"]
