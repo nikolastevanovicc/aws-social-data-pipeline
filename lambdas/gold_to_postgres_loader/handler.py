@@ -468,34 +468,162 @@ def row_to_insert_values(row, table_name):
     return tuple(row.get(column) for column in columns)
 
 
+def resolve_postgres_options(event):
+    event = event if isinstance(event, dict) else {}
+
+    raw_port = event.get("postgres_port") or os.getenv("POSTGRES_PORT") or 5432
+    try:
+        port = int(raw_port)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("POSTGRES_PORT must be an integer") from exc
+
+    options = {
+        "host": event.get("postgres_host") or os.getenv("POSTGRES_HOST"),
+        "port": port,
+        "database": event.get("postgres_database")
+        or os.getenv("POSTGRES_DATABASE")
+        or os.getenv("POSTGRES_DB"),
+        "user": event.get("postgres_user") or os.getenv("POSTGRES_USER"),
+        "password": event.get("postgres_password") or os.getenv("POSTGRES_PASSWORD"),
+    }
+
+    required_fields = {
+        "host": "POSTGRES_HOST is required",
+        "database": "POSTGRES_DATABASE is required",
+        "user": "POSTGRES_USER is required",
+        "password": "POSTGRES_PASSWORD is required",
+    }
+    for field_name, error_message in required_fields.items():
+        if not options[field_name]:
+            raise ValueError(error_message)
+
+    return options
+
+
+def connect_to_postgres(postgres_options):
+    import pg8000.dbapi
+
+    return pg8000.dbapi.connect(
+        host=postgres_options["host"],
+        port=postgres_options["port"],
+        database=postgres_options["database"],
+        user=postgres_options["user"],
+        password=postgres_options["password"],
+    )
+
+
+def delete_values_for_table(table_name, data_date, platform=None):
+    columns = get_table_columns(table_name)
+    values = [data_date]
+
+    if "platform" in columns:
+        values.append(platform)
+
+    return tuple(values)
+
+
+def execute_replace_table_rows(connection, table_name, rows, data_date, platform):
+    delete_sql = build_delete_sql(table_name)
+    delete_values = delete_values_for_table(table_name, data_date, platform)
+    insert_sql = build_insert_sql(table_name)
+    insert_values = [
+        row_to_insert_values(row, table_name)
+        for row in rows
+    ]
+
+    cursor = connection.cursor()
+    cursor.execute(delete_sql, delete_values)
+
+    if insert_values:
+        if hasattr(cursor, "executemany"):
+            cursor.executemany(insert_sql, insert_values)
+        else:
+            for values in insert_values:
+                cursor.execute(insert_sql, values)
+
+    return {
+        "table_name": table_name,
+        "deleted_for_date": data_date,
+        "platform": platform,
+        "inserted_row_count": len(rows),
+    }
+
+
+def write_loaded_datasets_to_postgres(connection, loaded_datasets, data_date):
+    results = {}
+
+    for platform, platform_results in loaded_datasets.items():
+        results[platform] = {}
+        platform_row_value = get_platform_row_value(platform)
+
+        for dataset_name, dataset_result in platform_results.items():
+            table_name = dataset_result["postgres_table"]
+            rows = dataset_result.get("rows") or []
+            write_result = execute_replace_table_rows(
+                connection,
+                table_name,
+                rows,
+                data_date,
+                platform_row_value,
+            )
+            results[platform][dataset_name] = {
+                "postgres_table": table_name,
+                "inserted_row_count": write_result["inserted_row_count"],
+            }
+
+    return results
+
+
 def lambda_handler(event, context):
     options = resolve_loader_options(event)
     if not options["bucket"]:
         raise ValueError("DATA_LAKE_BUCKET is required")
 
-    requested_tables = read_requested_gold_datasets(
+    loaded_datasets = read_requested_gold_datasets(
         options["bucket"],
         options["gold_prefix"],
         options["data_date"],
         options["platforms"],
         options["datasets"],
     )
+    postgres_options = resolve_postgres_options(event)
+
+    connection = None
+    try:
+        connection = connect_to_postgres(postgres_options)
+        write_results = write_loaded_datasets_to_postgres(
+            connection,
+            loaded_datasets,
+            options["data_date"],
+        )
+        connection.commit()
+    except Exception:
+        if connection is not None and hasattr(connection, "rollback"):
+            connection.rollback()
+        raise
+    finally:
+        if connection is not None and hasattr(connection, "close"):
+            connection.close()
+
     tables = {
         platform: {
             dataset_name: {
                 "postgres_table": dataset_result["postgres_table"],
                 "s3_uri": dataset_result["s3_uri"],
                 "partition_filter_values": dataset_result["partition_filter_values"],
-                "row_count": dataset_result["row_count"],
+                "loaded_row_count": dataset_result["row_count"],
+                "inserted_row_count": write_results[platform][dataset_name][
+                    "inserted_row_count"
+                ],
             }
             for dataset_name, dataset_result in platform_results.items()
         }
-        for platform, platform_results in requested_tables.items()
+        for platform, platform_results in loaded_datasets.items()
     }
 
     return {
         "source": "gold-to-postgres",
-        "status": "loaded",
+        "status": "written",
         "mode": options["mode"],
         "bucket": options["bucket"],
         "gold_prefix": options["gold_prefix"],
