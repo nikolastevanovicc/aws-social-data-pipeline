@@ -599,7 +599,7 @@ def write_x_silver_tables(
     bucket, silver_prefix, normalized_tables, mode="overwrite_partitions"
 ):
     partition_columns = {
-        "users": ["platform"],
+        "users": ["platform","data_date"],
         "posts": ["platform", "year", "month", "day"],
         "post_tags": ["platform", "year", "month", "day"],
         "post_relations": ["platform", "year", "month", "day"],
