@@ -38,6 +38,18 @@ docker exec -i social-analytics-postgres \
   psql -U superset -d social_analytics < database/views.sql
 ```
 
+## Seed Local Demo Dashboard Data
+
+Run this from the repository root after `docker compose up -d`,
+`database/schema.sql` has been applied, and `database/views.sql` has been
+applied.
+
+```bash
+source .venv/bin/activate
+python -m pip install -r lambdas/gold_to_postgres_loader/requirements.txt
+python scripts/seed_local_demo_gold_data.py
+```
+
 ## Open Superset
 
 ```text

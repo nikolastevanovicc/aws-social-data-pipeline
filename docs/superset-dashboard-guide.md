@@ -55,6 +55,22 @@ Create one Superset dataset for each analytics view:
 - `vw_x_hashtag_trends`
 - `vw_data_quality_score`
 
+## Local Demo Data for Screenshots
+
+For local screenshots, seed demo gold rows after PostgreSQL is running and the
+schema and views have been applied:
+
+```bash
+python scripts/seed_local_demo_gold_data.py
+```
+
+The script inserts local/demo-only sample data for `2026-05-18` through
+`2026-05-20`, reapplies the analytics views, and validates that each dashboard
+view returns rows. Refresh the Superset datasets after running it, then use the
+date range `2026-05-18` to `2026-05-20` in charts. The charts should no longer
+be empty. This data is only for local dashboard screenshots and is not AWS
+production data.
+
 ## Recommended Charts
 
 ### HN Daily Metrics
