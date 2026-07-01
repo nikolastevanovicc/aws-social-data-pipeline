@@ -27,6 +27,17 @@ docker exec -i social-analytics-postgres \
   psql -U superset -d social_analytics < database/schema.sql
 ```
 
+## Apply Analytics Views
+
+Run this after `database/schema.sql` has been applied.
+
+From the repository root:
+
+```bash
+docker exec -i social-analytics-postgres \
+  psql -U superset -d social_analytics < database/views.sql
+```
+
 ## Open Superset
 
 ```text
