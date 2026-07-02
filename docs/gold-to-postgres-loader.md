@@ -12,7 +12,8 @@ gold S3 Parquet -> gold-to-postgres-loader Lambda -> PostgreSQL -> Superset
 ```
 
 This deploys only the loader Lambda. PostgreSQL and Superset EC2 provisioning is
-handled separately.
+handled by `AnalyticsStack`, and shared VPC networking is handled by
+`NetworkStack`.
 
 ## Lambda Configuration
 
@@ -39,23 +40,34 @@ Required environment variables:
 - `POSTGRES_USER`
 - `POSTGRES_PASSWORD`
 
-Do not commit real passwords or secrets. Pass deployment-specific values through
-CDK context or local environment variables at synth/deploy time.
+In the full CDK app, `app.py` passes
+`analytics_stack.postgres_private_host` into `GoldStack`, so `POSTGRES_HOST`
+resolves to the private PostgreSQL host from `AnalyticsStack`. That constructor
+value takes precedence over context or local environment fallback.
+
+Do not commit real passwords or secrets. Pass deployment-specific non-host
+values through CDK context or local environment variables at synth/deploy time.
 
 ## CDK Context Example
 
 ```bash
 cd infrastructure
-cdk synth \
-  -c postgres_host=postgres.example.internal \
+export DISCORD_WEBHOOK_URL='replace-with-discord-webhook-url'
+
+cdk synth DataLakeStack NetworkStack AnalyticsStack GoldStack \
+  -c analytics_allowed_cidr=x.x.x.x/32 \
+  -c analytics_postgres_password='replace-with-secure-password' \
+  -c analytics_superset_secret_key='replace-with-demo-secret-key' \
   -c postgres_port=5432 \
   -c postgres_database=social_analytics \
   -c postgres_user=superset \
   -c postgres_password='replace-with-secure-password'
 ```
 
-The same values can also come from local environment variables such as
-`POSTGRES_HOST` and `POSTGRES_PASSWORD`.
+The deployed app should not pass a public PostgreSQL host for
+`gold-to-postgres-loader`. The host is wired from `AnalyticsStack` private IP.
+The same non-host values can also come from local environment variables such as
+`POSTGRES_PASSWORD`.
 
 ## Manual Invocation
 
@@ -74,18 +86,14 @@ Example payload:
   "data_date": "2026-05-20",
   "platforms": ["hacker-news", "x"],
   "datasets": null,
-  "mode": "replace_date",
-  "postgres_host": "replace-with-postgres-host",
-  "postgres_port": 5432,
-  "postgres_database": "social_analytics",
-  "postgres_user": "superset",
-  "postgres_password": "replace-with-password"
+  "mode": "replace_date"
 }
 ```
 
-The event values override Lambda environment variables for that invocation.
-Replace placeholder values before invoking, and never store real passwords in
-the repository.
+Event values override Lambda environment variables for that invocation. In the
+shared-VPC AWS deployment, omit `postgres_host` so the loader uses the private
+host configured by CDK. If you include database override values for local
+testing, never store real passwords in the repository.
 
 ```bash
 aws lambda invoke \
@@ -98,3 +106,7 @@ aws lambda invoke \
 
 The loader is not automatically triggered yet. Invoke it manually after the gold
 Parquet outputs for the selected `data_date` exist in S3.
+
+Do not open PostgreSQL tcp/5432 publicly for this invocation. Lambda-to-PostgreSQL
+access should use the `NetworkStack` rule from `PipelineLambdaSecurityGroup` to
+`AnalyticsSecurityGroup` on tcp/5432.

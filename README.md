@@ -12,13 +12,49 @@ Current implemented scope:
 - Gold-to-PostgreSQL loader Lambda.
 - PostgreSQL and Apache Superset analytics workflow.
 - Failed-job notifications through CloudWatch alarms, SNS, Lambda, and Discord.
-- CDK infrastructure for the non-VPC demo architecture.
-
-VPC placement, private routing, and least-privilege network hardening are not
-implemented in this branch. They are intentionally left for the separate
-VPC/least-privilege task.
+- Shared VPC CDK infrastructure with private pipeline Lambdas and restricted
+  analytics access.
 
 ## Architecture
+
+### Network and Security Boundary
+
+`NetworkStack` creates the shared network used by the deployed AWS pipeline:
+
+- one VPC,
+- public subnets,
+- private subnets with egress,
+- one NAT Gateway,
+- an S3 Gateway Endpoint,
+- `PipelineLambdaSecurityGroup`,
+- `AnalyticsSecurityGroup`.
+
+Pipeline Lambda functions run in the VPC private subnets with egress. They use
+`PipelineLambdaSecurityGroup` and reach AWS services through the VPC routing
+path; S3 traffic can use the S3 Gateway Endpoint and external APIs/webhooks use
+NAT egress.
+
+`AnalyticsStack` runs the demo analytics EC2 host in the same VPC. PostgreSQL
+is not opened publicly for Lambda access. The intended database path is:
+
+```text
+Pipeline Lambdas in private subnets
+  -> PipelineLambdaSecurityGroup
+  -> AnalyticsSecurityGroup tcp/5432
+  -> PostgreSQL on the analytics EC2 host
+```
+
+Superset remains browser-accessible on tcp/8088, but only from
+`analytics_allowed_cidr`. For a demo or presentation, use your current public
+IP as a `/32`:
+
+```bash
+-c analytics_allowed_cidr="$(curl -s https://checkip.amazonaws.com)/32"
+```
+
+Do not use `analytics_allowed_cidr=0.0.0.0/0` as a Lambda-to-PostgreSQL
+workaround. That old workaround is obsolete because Lambda-to-PostgreSQL access
+now uses security-group-to-security-group connectivity inside the shared VPC.
 
 ### Bronze Layer
 
@@ -88,9 +124,14 @@ trends, and data quality summaries used by downstream analytics.
 S3 into PostgreSQL tables defined in `database/schema.sql`. It is deployed by
 `GoldStack` as `gold-to-postgres-loader`.
 
-The loader can be configured through CDK context or environment variables:
+In the deployed CDK app, `GoldStack` receives
+`analytics_stack.postgres_private_host` from `app.py`, so `POSTGRES_HOST`
+resolves to the private IP of the analytics EC2 instance. Constructor wiring
+takes precedence over the older context/environment fallback.
 
-- `postgres_host` / `POSTGRES_HOST`
+The remaining loader settings can be configured through CDK context or
+environment variables:
+
 - `postgres_port` / `POSTGRES_PORT`
 - `postgres_database` / `POSTGRES_DATABASE`
 - `postgres_user` / `POSTGRES_USER`
@@ -111,8 +152,9 @@ SQL files, so apply them with the commands in the local analytics runbook
 below.
 
 `AnalyticsStack` also provisions a demo EC2 host that runs PostgreSQL and
-Superset with Docker Compose. Its CloudFormation init applies the schema and
-views during EC2 setup and is configured to fail loudly if setup fails.
+Superset with Docker Compose in the shared VPC. Its CloudFormation init applies
+the schema and views during EC2 setup and is configured to fail loudly if setup
+fails.
 
 ### Notification Stack
 
@@ -128,13 +170,13 @@ provided in either of these ways:
 
 ```bash
 cdk synth NotificationStack \
-  -c discord_webhook_url='https://discord.com/api/webhooks/...'
+  -c discord_webhook_url='replace-with-discord-webhook-url'
 ```
 
 or:
 
 ```bash
-export DISCORD_WEBHOOK_URL='https://discord.com/api/webhooks/...'
+export DISCORD_WEBHOOK_URL='replace-with-discord-webhook-url'
 cdk synth NotificationStack
 ```
 
@@ -152,10 +194,11 @@ infrastructure/app.py
 Stacks:
 
 - `DataLakeStack`
+- `NetworkStack`
+- `AnalyticsStack`
 - `BronzeStack`
 - `SilverStack`
 - `GoldStack`
-- `AnalyticsStack`
 - `NotificationStack`
 
 Infrastructure unit tests live under `infrastructure/tests/unit`.
@@ -304,55 +347,91 @@ source ../.venv/bin/activate
 cdk bootstrap
 ```
 
+For a demo or presentation, set `analytics_allowed_cidr` to your current public
+IP as a `/32`:
+
+```bash
+ANALYTICS_ALLOWED_CIDR="$(curl -s https://checkip.amazonaws.com)/32"
+```
+
 Synthesize all stacks with placeholder values:
 
 ```bash
 cd infrastructure
 source ../.venv/bin/activate
+export DISCORD_WEBHOOK_URL='replace-with-discord-webhook-url'
 
-cdk synth --all \
-  -c discord_webhook_url='https://discord.com/api/webhooks/...' \
-  -c analytics_allowed_cidr='x.x.x.x/32' \
+cdk synth \
+  -c analytics_allowed_cidr="$ANALYTICS_ALLOWED_CIDR" \
   -c analytics_postgres_password='replace-with-demo-password' \
   -c analytics_superset_secret_key='replace-with-demo-secret-key' \
-  -c postgres_host='replace-with-postgres-host' \
-  -c postgres_password='replace-with-postgres-password'
+  -c postgres_password='replace-with-demo-password'
 ```
 
-Deploy the core pipeline stacks:
+When `NotificationStack` is included, provide the Discord webhook through the
+environment or a local-only CDK context value. Do not commit the value.
+
+```bash
+export DISCORD_WEBHOOK_URL='replace-with-discord-webhook-url'
+```
+
+Deploy the full shared-VPC demo app:
 
 ```bash
 cd infrastructure
 source ../.venv/bin/activate
+export DISCORD_WEBHOOK_URL='replace-with-discord-webhook-url'
 
-cdk deploy DataLakeStack BronzeStack SilverStack GoldStack \
-  -c postgres_host='replace-with-postgres-host' \
-  -c postgres_password='replace-with-postgres-password'
-```
-
-Deploy the analytics EC2 demo stack:
-
-```bash
-cd infrastructure
-source ../.venv/bin/activate
-
-cdk deploy AnalyticsStack \
-  -c analytics_allowed_cidr='x.x.x.x/32' \
+cdk deploy \
+  DataLakeStack \
+  NetworkStack \
+  AnalyticsStack \
+  BronzeStack \
+  SilverStack \
+  GoldStack \
+  NotificationStack \
+  -c analytics_allowed_cidr="$ANALYTICS_ALLOWED_CIDR" \
   -c analytics_instance_type='t3.micro' \
   -c analytics_postgres_password='replace-with-demo-password' \
   -c analytics_superset_secret_key='replace-with-demo-secret-key' \
   -c analytics_auto_stop_enabled=true \
-  -c analytics_auto_stop_utc_hour=22
+  -c analytics_auto_stop_utc_hour=22 \
+  -c postgres_password='replace-with-demo-password'
 ```
 
-Deploy the notification stack with CDK context:
+`NetworkStack` must be deployed with the pipeline and analytics stacks because
+it owns the VPC, private subnets, NAT Gateway, S3 Gateway Endpoint, and shared
+security groups.
+
+Deploy a smaller subset only when you know its dependencies are already
+available in the target environment. For example, after `DataLakeStack`,
+`NetworkStack`, and `AnalyticsStack` exist:
+
+```bash
+cd infrastructure
+source ../.venv/bin/activate
+export DISCORD_WEBHOOK_URL='replace-with-discord-webhook-url'
+
+cdk deploy BronzeStack SilverStack GoldStack NotificationStack \
+  -c analytics_allowed_cidr="$ANALYTICS_ALLOWED_CIDR" \
+  -c analytics_postgres_password='replace-with-demo-password' \
+  -c analytics_superset_secret_key='replace-with-demo-secret-key' \
+  -c postgres_password='replace-with-demo-password'
+```
+
+The gold-to-PostgreSQL loader no longer needs a public PostgreSQL host in the
+deploy command. `app.py` wires `GoldStack` to
+`analytics_stack.postgres_private_host`, so the deployed loader uses the private
+PostgreSQL host from `AnalyticsStack`.
+
+Deploy the notification stack with CDK context only for local one-off use:
 
 ```bash
 cd infrastructure
 source ../.venv/bin/activate
 
 cdk deploy NotificationStack \
-  -c discord_webhook_url='https://discord.com/api/webhooks/...'
+  -c discord_webhook_url='replace-with-discord-webhook-url'
 ```
 
 Deploy the notification stack with an environment variable instead:
@@ -360,7 +439,7 @@ Deploy the notification stack with an environment variable instead:
 ```bash
 cd infrastructure
 source ../.venv/bin/activate
-export DISCORD_WEBHOOK_URL='https://discord.com/api/webhooks/...'
+export DISCORD_WEBHOOK_URL='replace-with-discord-webhook-url'
 
 cdk deploy NotificationStack
 ```
@@ -368,7 +447,10 @@ cdk deploy NotificationStack
 The placeholders above are intentionally not real secrets, passwords, webhook
 URLs, hosts, CIDRs, or AWS account identifiers.
 
-## Manual Lambda Invocation Examples
+## Final Manual Pipeline Flow
+
+After the stacks are deployed, run the pipeline manually in this order for a
+demo validation. These commands do not require opening PostgreSQL publicly.
 
 Invoke Hacker News bronze ingestion for a specific date:
 
@@ -380,51 +462,101 @@ aws lambda invoke \
 cat response.json
 ```
 
-Invoke Hacker News bronze ingestion with default dates:
+Upload the X dataset to the bronze S3 prefix. Use the deployed data lake bucket
+name from `DataLakeStack` outputs:
+
+```bash
+python scripts/upload_x_dataset.py \
+  --bucket replace-with-data-lake-bucket-name \
+  --dataset-name x-synthetic-seed \
+  --ingest-date 2026-05-30
+```
+
+Invoke Hacker News and X silver normalization:
 
 ```bash
 aws lambda invoke \
-  --function-name hn-bronze-ingestion \
-  --payload '{}' \
-  response.json
-cat response.json
+  --function-name normalize-hn-silver \
+  --payload fileb://lambdas/hn_silver_normalization/test_event.json \
+  hn_silver_response.json \
+  --cli-read-timeout 900
+cat hn_silver_response.json
+
+aws lambda invoke \
+  --function-name normalize-x-silver \
+  --payload fileb://lambdas/x_silver_normalization/test_event.json \
+  x_silver_response.json \
+  --cli-read-timeout 900
+cat x_silver_response.json
 ```
 
-Invoke the gold-to-PostgreSQL loader after gold Parquet outputs exist:
+Invoke Hacker News and X gold aggregation:
+
+```bash
+aws lambda invoke \
+  --function-name build-hn-gold \
+  --payload fileb://lambdas/hn_gold_aggregation/test_event.json \
+  hn_gold_response.json \
+  --cli-read-timeout 900
+cat hn_gold_response.json
+
+aws lambda invoke \
+  --function-name build-x-gold \
+  --payload fileb://lambdas/x_gold_aggregation/test_event.json \
+  x_gold_response.json \
+  --cli-read-timeout 900
+cat x_gold_response.json
+```
+
+Invoke the gold-to-PostgreSQL loader after gold Parquet outputs exist. For the
+shared-VPC AWS deployment, rely on the loader environment variables that CDK
+wired at deploy time. Do not open PostgreSQL to `0.0.0.0/0`.
+
+Create a local event file that does not override `postgres_host` with a public
+host:
+
+```bash
+cat > gold_to_postgres_runtime_event.json <<'EOF'
+{
+  "bucket": "replace-with-data-lake-bucket-name",
+  "gold_prefix": "gold",
+  "data_date": "2026-05-20",
+  "platforms": ["hacker-news", "x"],
+  "datasets": null,
+  "mode": "replace_date"
+}
+EOF
+```
 
 ```bash
 aws lambda invoke \
   --function-name gold-to-postgres-loader \
-  --payload fileb://lambdas/gold_to_postgres_loader/test_event.example.json \
+  --payload fileb://gold_to_postgres_runtime_event.json \
   gold_to_postgres_response.json \
   --cli-read-timeout 900
 cat gold_to_postgres_response.json
 ```
 
-Replace placeholder values in the example event before invoking. Do not commit
-real database credentials.
+Then open the `SupersetUrl` output in a browser from an IP allowed by
+`analytics_allowed_cidr`, refresh datasets if needed, and view the dashboard.
 
-## Current Security Boundary
+Do not commit runtime event files containing real bucket names, credentials, or
+host values.
 
-Implemented in this branch:
+## Security Checklist
 
-- IAM policies scoped by layer for S3 read/write behavior.
-- CloudWatch/SNS/Lambda notification flow for failed jobs.
-- Mandatory Discord webhook configuration for NotificationStack.
-- Analytics demo host setup that fails CloudFormation init loudly on setup
-  errors.
-- Demo cost guardrail through optional EC2 auto-stop cron in `AnalyticsStack`.
+Before presenting or opening a final PR, verify:
 
-Not implemented in this branch:
-
-- VPC placement for all Lambdas.
-- Private subnets or NAT design.
-- Security group rules for Lambda-to-PostgreSQL private connectivity.
-- Least-privilege network routing between the loader Lambda and analytics
-  PostgreSQL host.
-- Production-grade secrets management.
-
-Those networking and secret-management improvements are planned separately.
+- No tcp/5432 ingress exists from `0.0.0.0/0`.
+- Superset tcp/8088 ingress is restricted to `analytics_allowed_cidr`.
+- Pipeline Lambdas synthesize with `VpcConfig`.
+- `PipelineLambdaSecurityGroup` can reach `AnalyticsSecurityGroup` on tcp/5432.
+- The S3 Gateway Endpoint exists in `NetworkStack`.
+- The NAT Gateway exists for external APIs and the Discord webhook.
+- `gold-to-postgres-loader` uses the private `AnalyticsStack` PostgreSQL host
+  through `app.py` wiring.
+- No real secrets, real IPs, real AWS account IDs, or real Discord webhook URLs
+  are committed.
 
 ## Final Pre-Commit Checklist
 

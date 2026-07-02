@@ -5,6 +5,7 @@ from aws_cdk import (
     CfnOutput,
     Duration,
     Stack,
+    aws_ec2 as ec2,
     aws_cloudwatch as cloudwatch,
     aws_cloudwatch_actions as cloudwatch_actions,
     aws_lambda as _lambda,
@@ -17,8 +18,19 @@ from constructs import Construct
 
 class NotificationStack(Stack):
 
-    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    def __init__(
+        self,
+        scope: Construct,
+        construct_id: str,
+        *,
+        vpc: ec2.IVpc | None = None,
+        lambda_security_group: ec2.ISecurityGroup | None = None,
+        **kwargs,
+    ) -> None:
         super().__init__(scope, construct_id, **kwargs)
+        lambda_network_config = self._lambda_network_config(
+            vpc, lambda_security_group
+        )
 
         discord_webhook_url = self.node.try_get_context(
             "discord_webhook_url"
@@ -48,6 +60,7 @@ class NotificationStack(Stack):
                 "service-role/AWSLambdaBasicExecutionRole"
             )
         )
+        self._add_vpc_access_policy_if_needed(notification_lambda_role, vpc)
 
         notification_lambda = _lambda.Function(
             self,
@@ -64,6 +77,7 @@ class NotificationStack(Stack):
             environment={
                 "DISCORD_WEBHOOK_URL": discord_webhook_url,
             },
+            **lambda_network_config,
         )
 
         alerts_topic.add_subscription(
@@ -115,4 +129,34 @@ class NotificationStack(Stack):
             self,
             "NotificationLambdaName",
             value=notification_lambda.function_name,
+        )
+
+    def _lambda_network_config(
+        self,
+        vpc: ec2.IVpc | None,
+        lambda_security_group: ec2.ISecurityGroup | None,
+    ) -> dict:
+        if (vpc is None) != (lambda_security_group is None):
+            raise ValueError(
+                "vpc and lambda_security_group must be provided together."
+            )
+        if vpc is None or lambda_security_group is None:
+            return {}
+        return {
+            "vpc": vpc,
+            "vpc_subnets": ec2.SubnetSelection(
+                subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
+            ),
+            "security_groups": [lambda_security_group],
+        }
+
+    def _add_vpc_access_policy_if_needed(
+        self, role: iam.Role, vpc: ec2.IVpc | None
+    ) -> None:
+        if vpc is None:
+            return
+        role.add_managed_policy(
+            iam.ManagedPolicy.from_aws_managed_policy_name(
+                "service-role/AWSLambdaVPCAccessExecutionRole"
+            )
         )

@@ -11,6 +11,7 @@ from aws_cdk import (
     Duration,
     ILocalBundling,
     Stack,
+    aws_ec2 as ec2,
     aws_iam as iam,
     aws_lambda as _lambda,
     aws_s3 as s3,
@@ -73,9 +74,15 @@ class GoldStack(Stack):
         construct_id: str,
         *,
         data_lake_bucket: s3.IBucket,
+        vpc: ec2.IVpc | None = None,
+        lambda_security_group: ec2.ISecurityGroup | None = None,
+        postgres_host: str | None = None,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
+        lambda_network_config = self._lambda_network_config(
+            vpc, lambda_security_group
+        )
 
         gold_lambda_role = iam.Role(
             self,
@@ -83,6 +90,7 @@ class GoldStack(Stack):
             assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
             description="Least-privilege role for gold aggregation Lambdas.",
         )
+        self._add_vpc_access_policy_if_needed(gold_lambda_role, vpc)
 
         gold_lambda_role.add_to_policy(
             iam.PolicyStatement(
@@ -149,6 +157,29 @@ class GoldStack(Stack):
             Path(__file__).resolve().parents[2] / "lambdas/gold_to_postgres_loader"
         )
 
+        gold_to_postgres_loader_role = iam.Role(
+            self,
+            "GoldToPostgresLoaderLambdaRole",
+            assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
+            description="Least-privilege role for gold-to-Postgres loader Lambda.",
+        )
+        self._add_vpc_access_policy_if_needed(gold_to_postgres_loader_role, vpc)
+
+        gold_to_postgres_loader_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["logs:CreateLogGroup"],
+                resources=[f"arn:aws:logs:{self.region}:{self.account}:*"],
+            )
+        )
+        gold_to_postgres_loader_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["logs:CreateLogStream", "logs:PutLogEvents"],
+                resources=[
+                    f"arn:aws:logs:{self.region}:{self.account}:log-group:/aws/lambda/*:*"
+                ],
+            )
+        )
+
         def context_or_env(context_key: str, env_key: str, default: str) -> str:
             return str(
                 self.node.try_get_context(context_key) or os.getenv(env_key, default)
@@ -169,6 +200,7 @@ class GoldStack(Stack):
             timeout=Duration.minutes(10),
             memory_size=1024,
             environment=gold_environment,
+            **lambda_network_config,
         )
 
         x_gold_lambda = _lambda.Function(
@@ -186,6 +218,7 @@ class GoldStack(Stack):
             timeout=Duration.minutes(10),
             memory_size=1024,
             environment=gold_environment,
+            **lambda_network_config,
         )
 
         gold_to_postgres_loader_lambda = _lambda.Function(
@@ -209,14 +242,15 @@ class GoldStack(Stack):
                 ),
             ),
             layers=[aws_sdk_pandas_layer],
+            role=gold_to_postgres_loader_role,
             timeout=Duration.minutes(5),
             memory_size=1024,
             environment={
                 "DATA_LAKE_BUCKET": data_lake_bucket.bucket_name,
                 "GOLD_PREFIX": "gold",
-                "POSTGRES_HOST": context_or_env(
-                    "postgres_host", "POSTGRES_HOST", ""
-                ),
+                "POSTGRES_HOST": postgres_host
+                if postgres_host is not None
+                else context_or_env("postgres_host", "POSTGRES_HOST", ""),
                 "POSTGRES_PORT": context_or_env(
                     "postgres_port", "POSTGRES_PORT", "5432"
                 ),
@@ -232,6 +266,7 @@ class GoldStack(Stack):
                     "postgres_password", "POSTGRES_PASSWORD", ""
                 ),
             },
+            **lambda_network_config,
         )
         data_lake_bucket.grant_read(gold_to_postgres_loader_lambda, "gold/*")
 
@@ -249,4 +284,34 @@ class GoldStack(Stack):
             self,
             "GoldToPostgresLoaderFunctionName",
             value=gold_to_postgres_loader_lambda.function_name,
+        )
+
+    def _lambda_network_config(
+        self,
+        vpc: ec2.IVpc | None,
+        lambda_security_group: ec2.ISecurityGroup | None,
+    ) -> dict:
+        if (vpc is None) != (lambda_security_group is None):
+            raise ValueError(
+                "vpc and lambda_security_group must be provided together."
+            )
+        if vpc is None or lambda_security_group is None:
+            return {}
+        return {
+            "vpc": vpc,
+            "vpc_subnets": ec2.SubnetSelection(
+                subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
+            ),
+            "security_groups": [lambda_security_group],
+        }
+
+    def _add_vpc_access_policy_if_needed(
+        self, role: iam.Role, vpc: ec2.IVpc | None
+    ) -> None:
+        if vpc is None:
+            return
+        role.add_managed_policy(
+            iam.ManagedPolicy.from_aws_managed_policy_name(
+                "service-role/AWSLambdaVPCAccessExecutionRole"
+            )
         )

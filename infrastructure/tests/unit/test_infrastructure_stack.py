@@ -10,6 +10,7 @@ from infrastructure.analytics_stack import AnalyticsStack
 from infrastructure.bronze_stack import BronzeStack
 from infrastructure.data_lake_stack import DataLakeStack
 from infrastructure.gold_stack import GoldStack
+from infrastructure.network_stack import NetworkStack
 from infrastructure.notification_stack import NotificationStack
 from infrastructure.silver_stack import SilverStack
 
@@ -60,10 +61,99 @@ def _analytics_template(context=None):
     return assertions.Template.from_stack(analytics_stack)
 
 
+def _analytics_template_with_network(context=None):
+    default_context = {
+        "analytics_allowed_cidr": "203.0.113.10/32",
+        "analytics_postgres_password": "dummy",
+        "analytics_superset_secret_key": "dummy",
+    }
+    if context is not None:
+        default_context.update(context)
+
+    app = core.App(context=default_context)
+    network_stack = NetworkStack(app, "network")
+    analytics_stack = AnalyticsStack(
+        app,
+        "analytics",
+        vpc=network_stack.vpc,
+        analytics_security_group=network_stack.analytics_security_group,
+    )
+    return (
+        assertions.Template.from_stack(network_stack),
+        assertions.Template.from_stack(analytics_stack),
+    )
+
+
+@lru_cache(maxsize=1)
+def _networked_pipeline_templates():
+    app = core.App(
+        context={
+            "analytics_allowed_cidr": "203.0.113.10/32",
+            "analytics_postgres_password": "dummy",
+            "analytics_superset_secret_key": "dummy",
+            "discord_webhook_url": "https://example.com/discord",
+        }
+    )
+    data_lake_stack = DataLakeStack(app, "networked-data-lake")
+    network_stack = NetworkStack(app, "networked-network")
+    analytics_stack = AnalyticsStack(
+        app,
+        "networked-analytics",
+        vpc=network_stack.vpc,
+        analytics_security_group=network_stack.analytics_security_group,
+    )
+    bronze_stack = BronzeStack(
+        app,
+        "networked-bronze",
+        data_lake_bucket=data_lake_stack.data_lake_bucket,
+        vpc=network_stack.vpc,
+        lambda_security_group=network_stack.pipeline_lambda_security_group,
+    )
+    silver_stack = SilverStack(
+        app,
+        "networked-silver",
+        data_lake_bucket=data_lake_stack.data_lake_bucket,
+        vpc=network_stack.vpc,
+        lambda_security_group=network_stack.pipeline_lambda_security_group,
+    )
+    gold_stack = GoldStack(
+        app,
+        "networked-gold",
+        data_lake_bucket=data_lake_stack.data_lake_bucket,
+        vpc=network_stack.vpc,
+        lambda_security_group=network_stack.pipeline_lambda_security_group,
+        postgres_host=analytics_stack.postgres_private_host,
+    )
+    notification_stack = NotificationStack(
+        app,
+        "networked-notification",
+        vpc=network_stack.vpc,
+        lambda_security_group=network_stack.pipeline_lambda_security_group,
+    )
+    return {
+        "network": assertions.Template.from_stack(network_stack),
+        "analytics": assertions.Template.from_stack(analytics_stack),
+        "bronze": assertions.Template.from_stack(bronze_stack),
+        "silver": assertions.Template.from_stack(silver_stack),
+        "gold": assertions.Template.from_stack(gold_stack),
+        "notification": assertions.Template.from_stack(notification_stack),
+    }
+
+
 def _notification_template(context=None):
     app = core.App(context=context or {})
     notification_stack = NotificationStack(app, "notification")
     return assertions.Template.from_stack(notification_stack)
+
+
+def _network_template(analytics_allowed_cidr="203.0.113.10/32", context=None):
+    app = core.App(context=context or {})
+    stack_kwargs = {}
+    if analytics_allowed_cidr is not None:
+        stack_kwargs["analytics_allowed_cidr"] = analytics_allowed_cidr
+
+    network_stack = NetworkStack(app, "network", **stack_kwargs)
+    return assertions.Template.from_stack(network_stack)
 
 
 def _all_templates():
@@ -117,6 +207,14 @@ def test_bronze_eventbridge_rule_is_daily_at_0200_utc():
     )
 
 
+def test_bronze_lambda_has_vpc_config_with_shared_network():
+    templates = _networked_pipeline_templates()
+
+    _assert_lambda_uses_pipeline_network(
+        templates["bronze"], "hn-bronze-ingestion"
+    )
+
+
 def test_silver_lambdas_have_expected_environment_variables():
     _, _, silver_template, _ = _stacks()
     expected_environment = {
@@ -146,6 +244,17 @@ def test_silver_lambdas_have_expected_environment_variables():
             "Runtime": "python3.12",
             "Environment": expected_environment,
         },
+    )
+
+
+def test_silver_lambdas_have_vpc_config_with_shared_network():
+    templates = _networked_pipeline_templates()
+
+    _assert_lambda_uses_pipeline_network(
+        templates["silver"], "normalize-hn-silver"
+    )
+    _assert_lambda_uses_pipeline_network(
+        templates["silver"], "normalize-x-silver"
     )
 
 
@@ -229,6 +338,20 @@ def test_gold_lambdas_have_expected_environment_variables():
     )
 
 
+def test_gold_lambdas_have_vpc_config_with_shared_network():
+    templates = _networked_pipeline_templates()
+
+    _assert_lambda_uses_pipeline_network(
+        templates["gold"], "build-hn-gold"
+    )
+    _assert_lambda_uses_pipeline_network(
+        templates["gold"], "build-x-gold"
+    )
+    _assert_lambda_uses_pipeline_network(
+        templates["gold"], "gold-to-postgres-loader"
+    )
+
+
 def test_gold_lambdas_include_aws_sdk_pandas_layer():
     _, _, _, gold_template = _stacks()
     expected_layer = [
@@ -278,6 +401,17 @@ def test_gold_to_postgres_loader_has_expected_configuration():
             },
         },
     )
+
+
+def test_gold_to_postgres_loader_uses_analytics_private_host_when_wired():
+    templates = _networked_pipeline_templates()
+    loader = _lambda_resource(templates["gold"], "gold-to-postgres-loader")
+
+    postgres_host = loader["Properties"]["Environment"]["Variables"]["POSTGRES_HOST"]
+
+    assert "AnalyticsInstance" in repr(postgres_host)
+    assert "PrivateIp" in repr(postgres_host)
+    assert "PublicDnsName" not in repr(postgres_host)
 
 
 def test_gold_to_postgres_loader_includes_aws_sdk_pandas_layer():
@@ -409,7 +543,7 @@ def test_analytics_instance_type_can_be_configured():
     )
 
 
-def test_analytics_security_group_allows_superset_and_postgres_ports():
+def test_analytics_fallback_security_group_allows_superset_only():
     analytics_template = _analytics_stack()
 
     analytics_template.has_resource_properties(
@@ -429,7 +563,131 @@ def test_analytics_security_group_allows_superset_and_postgres_ports():
             )
         },
     )
-    analytics_template.has_resource_properties(
+    assert not _has_public_postgres_ingress(analytics_template)
+
+
+def test_analytics_stack_synthesizes_with_shared_network():
+    _, analytics_template = _analytics_template_with_network()
+
+    analytics_template.resource_count_is("AWS::EC2::Instance", 1)
+    analytics_template.resource_count_is("AWS::EC2::VPC", 0)
+    analytics_template.resource_count_is("AWS::EC2::SecurityGroup", 0)
+
+
+def test_analytics_instance_uses_shared_security_group():
+    _, analytics_template = _analytics_template_with_network()
+    instance = _analytics_instance(analytics_template)
+
+    group_set = instance["Properties"]["NetworkInterfaces"][0]["GroupSet"]
+
+    assert "AnalyticsSecurityGroup" in repr(group_set)
+
+
+def test_analytics_instance_uses_shared_public_subnet():
+    _, analytics_template = _analytics_template_with_network()
+    instance = _analytics_instance(analytics_template)
+    network_interface = instance["Properties"]["NetworkInterfaces"][0]
+
+    assert network_interface["AssociatePublicIpAddress"] is True
+    assert "publicSubnet" in repr(network_interface["SubnetId"])
+
+
+def test_analytics_outputs_private_postgres_host():
+    _, analytics_template = _analytics_template_with_network()
+
+    analytics_template.has_output(
+        "PostgresPrivateHost",
+        {"Value": assertions.Match.any_value()},
+    )
+    assert "PrivateIp" in repr(
+        analytics_template.to_json()["Outputs"]["PostgresPrivateHost"]["Value"]
+    )
+
+
+def test_shared_network_does_not_allow_public_postgres_ingress():
+    network_template, analytics_template = _analytics_template_with_network()
+
+    assert not _has_public_postgres_ingress(network_template)
+    assert not _has_public_postgres_ingress(analytics_template)
+
+
+def test_networked_pipeline_templates_do_not_allow_public_postgres_ingress():
+    templates = _networked_pipeline_templates()
+
+    assert not _has_public_postgres_ingress(templates["network"])
+    assert not _has_public_postgres_ingress(templates["analytics"])
+
+
+def test_network_stack_synthesizes_vpc():
+    network_template = _network_template()
+
+    network_template.resource_count_is("AWS::EC2::VPC", 1)
+
+
+def test_network_stack_creates_public_and_private_subnets():
+    network_template = _network_template()
+
+    network_template.resource_count_is("AWS::EC2::Subnet", 4)
+    network_template.has_resource_properties(
+        "AWS::EC2::Subnet",
+        {
+            "MapPublicIpOnLaunch": True,
+            "Tags": assertions.Match.array_with(
+                [{"Key": "aws-cdk:subnet-type", "Value": "Public"}]
+            ),
+        },
+    )
+    network_template.has_resource_properties(
+        "AWS::EC2::Subnet",
+        {
+            "MapPublicIpOnLaunch": False,
+            "Tags": assertions.Match.array_with(
+                [{"Key": "aws-cdk:subnet-type", "Value": "Private"}]
+            ),
+        },
+    )
+
+
+def test_network_stack_creates_exactly_one_nat_gateway():
+    network_template = _network_template()
+
+    network_template.resource_count_is("AWS::EC2::NatGateway", 1)
+
+
+def test_network_stack_creates_s3_gateway_endpoint():
+    network_template = _network_template()
+
+    network_template.has_resource_properties(
+        "AWS::EC2::VPCEndpoint",
+        {
+            "VpcEndpointType": "Gateway",
+            "ServiceName": assertions.Match.object_like(
+                {"Fn::Join": assertions.Match.any_value()}
+            ),
+        },
+    )
+    assert ".s3" in repr(network_template.to_json())
+
+
+def test_network_stack_outputs_reusable_resource_ids():
+    network_template = _network_template()
+
+    for output_name in [
+        "VpcId",
+        "PipelineLambdaSecurityGroupId",
+        "AnalyticsSecurityGroupId",
+    ]:
+        network_template.has_output(
+            output_name,
+            {"Value": assertions.Match.any_value()},
+        )
+
+
+def test_network_stack_allows_superset_from_configured_cidr():
+    allowed_cidr = "203.0.113.10/32"
+    network_template = _network_template(allowed_cidr)
+
+    network_template.has_resource_properties(
         "AWS::EC2::SecurityGroup",
         {
             "SecurityGroupIngress": assertions.Match.array_with(
@@ -437,15 +695,74 @@ def test_analytics_security_group_allows_superset_and_postgres_ports():
                     assertions.Match.object_like(
                         {
                             "IpProtocol": "tcp",
-                            "FromPort": 5432,
-                            "ToPort": 5432,
-                            "CidrIp": "0.0.0.0/0",
+                            "FromPort": 8088,
+                            "ToPort": 8088,
+                            "CidrIp": allowed_cidr,
                         }
                     )
                 ]
             )
         },
     )
+
+
+def test_network_stack_resolves_allowed_cidr_from_context():
+    allowed_cidr = "198.51.100.24/32"
+    network_template = _network_template(
+        analytics_allowed_cidr=None,
+        context={"analytics_allowed_cidr": allowed_cidr},
+    )
+
+    network_template.has_resource_properties(
+        "AWS::EC2::SecurityGroup",
+        {
+            "SecurityGroupIngress": assertions.Match.array_with(
+                [
+                    assertions.Match.object_like(
+                        {
+                            "IpProtocol": "tcp",
+                            "FromPort": 8088,
+                            "ToPort": 8088,
+                            "CidrIp": allowed_cidr,
+                        }
+                    )
+                ]
+            )
+        },
+    )
+
+
+def test_network_stack_allows_postgres_from_pipeline_lambda_security_group():
+    network_template = _network_template()
+
+    network_template.has_resource_properties(
+        "AWS::EC2::SecurityGroupIngress",
+        {
+            "IpProtocol": "tcp",
+            "FromPort": 5432,
+            "ToPort": 5432,
+            "SourceSecurityGroupId": assertions.Match.any_value(),
+        },
+    )
+
+
+def test_network_stack_does_not_allow_postgres_from_world():
+    network_template = _network_template()
+
+    for ingress_rule in _network_ingress_rules(network_template):
+        assert not (
+            ingress_rule.get("IpProtocol") == "tcp"
+            and ingress_rule.get("FromPort") == 5432
+            and ingress_rule.get("ToPort") == 5432
+            and ingress_rule.get("CidrIp") == "0.0.0.0/0"
+        )
+
+
+def test_network_stack_requires_analytics_allowed_cidr():
+    app = core.App()
+
+    with pytest.raises(ValueError, match="analytics_allowed_cidr.*-c"):
+        NetworkStack(app, "network")
 
 
 def test_analytics_outputs_are_synthesized():
@@ -457,6 +774,7 @@ def test_analytics_outputs_are_synthesized():
         "AnalyticsPublicDnsName",
         "SupersetUrl",
         "PostgresHost",
+        "PostgresPrivateHost",
         "PostgresPort",
         "AnalyticsAutoStopUtcHour",
     ]:
@@ -566,6 +884,66 @@ def test_notification_stack_synthesizes_with_discord_webhook_env(monkeypatch):
     )
 
 
+def test_notification_lambda_has_vpc_config_with_shared_network():
+    templates = _networked_pipeline_templates()
+
+    _assert_lambda_uses_pipeline_network(
+        templates["notification"], "pipeline-notification-handler"
+    )
+
+
+def test_networked_lambdas_use_pipeline_lambda_security_group():
+    templates = _networked_pipeline_templates()
+
+    for stack_name, function_name in [
+        ("bronze", "hn-bronze-ingestion"),
+        ("silver", "normalize-hn-silver"),
+        ("silver", "normalize-x-silver"),
+        ("gold", "build-hn-gold"),
+        ("gold", "build-x-gold"),
+        ("gold", "gold-to-postgres-loader"),
+        ("notification", "pipeline-notification-handler"),
+    ]:
+        lambda_function = _lambda_resource(templates[stack_name], function_name)
+        security_group_ids = lambda_function["Properties"]["VpcConfig"][
+            "SecurityGroupIds"
+        ]
+
+        assert "PipelineLambdaSecurityGroup" in repr(security_group_ids)
+
+
+def test_networked_lambda_roles_include_vpc_access_managed_policy():
+    templates = _networked_pipeline_templates()
+
+    for stack_name, function_name in [
+        ("bronze", "hn-bronze-ingestion"),
+        ("silver", "normalize-hn-silver"),
+        ("silver", "normalize-x-silver"),
+        ("gold", "build-hn-gold"),
+        ("gold", "build-x-gold"),
+        ("gold", "gold-to-postgres-loader"),
+        ("notification", "pipeline-notification-handler"),
+    ]:
+        role = _lambda_execution_role(templates[stack_name], function_name)
+        managed_policy_arns = role["Properties"].get("ManagedPolicyArns", [])
+
+        assert "AWSLambdaVPCAccessExecutionRole" in repr(managed_policy_arns)
+
+
+def test_networked_lambda_roles_do_not_attach_amazon_ec2_full_access():
+    templates = _networked_pipeline_templates()
+
+    for stack_name in ["bronze", "silver", "gold", "notification"]:
+        template_json = templates[stack_name].to_json()
+
+        for resource in template_json["Resources"].values():
+            if resource["Type"] != "AWS::IAM::Role":
+                continue
+
+            managed_policy_arns = resource["Properties"].get("ManagedPolicyArns", [])
+            assert "AmazonEC2FullAccess" not in repr(managed_policy_arns)
+
+
 def test_notification_stack_requires_discord_webhook_url(monkeypatch):
     monkeypatch.delenv("DISCORD_WEBHOOK_URL", raising=False)
 
@@ -597,6 +975,63 @@ def _analytics_instance(analytics_template):
 
     assert len(instances) == 1
     return instances[0]
+
+
+def _lambda_resource(template, function_name):
+    template_json = template.to_json()
+    matches = [
+        resource
+        for resource in template_json["Resources"].values()
+        if resource["Type"] == "AWS::Lambda::Function"
+        and resource["Properties"]["FunctionName"] == function_name
+    ]
+
+    assert len(matches) == 1
+    return matches[0]
+
+
+def _lambda_execution_role(template, function_name):
+    template_json = template.to_json()
+    lambda_function = _lambda_resource(template, function_name)
+    role_arn = lambda_function["Properties"]["Role"]
+    role_logical_id = role_arn["Fn::GetAtt"][0]
+
+    role = template_json["Resources"][role_logical_id]
+    assert role["Type"] == "AWS::IAM::Role"
+    return role
+
+
+def _assert_lambda_uses_pipeline_network(template, function_name):
+    lambda_function = _lambda_resource(template, function_name)
+    vpc_config = lambda_function["Properties"].get("VpcConfig")
+
+    assert vpc_config is not None
+    assert "PipelineLambdaSecurityGroup" in repr(vpc_config["SecurityGroupIds"])
+    assert "privateegress" in repr(vpc_config["SubnetIds"])
+    assert "publicSubnet" not in repr(vpc_config["SubnetIds"])
+
+
+def _network_ingress_rules(network_template):
+    template_json = network_template.to_json()
+    ingress_rules = []
+
+    for resource in template_json["Resources"].values():
+        if resource["Type"] == "AWS::EC2::SecurityGroup":
+            ingress_rules.extend(resource["Properties"].get("SecurityGroupIngress", []))
+        elif resource["Type"] == "AWS::EC2::SecurityGroupIngress":
+            ingress_rules.append(resource["Properties"])
+
+    return ingress_rules
+
+
+def _has_public_postgres_ingress(template):
+    return any(
+        ingress_rule.get("IpProtocol") == "tcp"
+        and ingress_rule.get("FromPort") == 5432
+        and ingress_rule.get("ToPort") == 5432
+        and ingress_rule.get("CidrIp") == "0.0.0.0/0"
+        for ingress_rule in _network_ingress_rules(template)
+    )
 
 
 def _as_list(value):

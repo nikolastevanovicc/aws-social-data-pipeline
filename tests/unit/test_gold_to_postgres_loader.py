@@ -302,7 +302,7 @@ def test_build_gold_s3_prefix():
             "daily_users_metric",
             DATA_DATE,
         )
-        == "gold/x/daily_users_metric/"
+        == "gold/daily_users_metric/"
     )
     assert (
         handler.build_gold_s3_prefix(
@@ -311,7 +311,7 @@ def test_build_gold_s3_prefix():
             "daily_item_counts",
             DATA_DATE,
         )
-        == "gold/hacker-news/daily_item_counts/"
+        == "gold/daily_item_counts/"
     )
 
 
@@ -380,18 +380,18 @@ def test_build_gold_partition_filter_values(platform, dataset_name, expected_val
 
 def test_build_s3_uri():
     assert (
-        handler.build_s3_uri("bucket", "gold/x/daily_users_metric/")
-        == "s3://bucket/gold/x/daily_users_metric/"
+        handler.build_s3_uri("bucket", "gold/daily_users_metric/")
+        == "s3://bucket/gold/daily_users_metric/"
     )
     assert (
-        handler.build_s3_uri("bucket", "/gold/x/daily_users_metric/")
-        == "s3://bucket/gold/x/daily_users_metric/"
+        handler.build_s3_uri("bucket", "/gold/daily_users_metric/")
+        == "s3://bucket/gold/daily_users_metric/"
     )
 
 
 def test_build_s3_uri_rejects_missing_bucket():
     with pytest.raises(ValueError, match="DATA_LAKE_BUCKET is required"):
-        handler.build_s3_uri("", "gold/x/daily_users_metric/")
+        handler.build_s3_uri("", "gold/daily_users_metric/")
 
 
 def test_build_s3_uri_rejects_missing_key():
@@ -428,7 +428,7 @@ def test_read_gold_dataset_rows(monkeypatch):
     assert result["platform"] == "x"
     assert result["dataset_name"] == "daily_users_metric"
     assert result["postgres_table"] == "x_daily_users_metric"
-    assert result["s3_uri"] == "s3://bucket/gold/x/daily_users_metric/"
+    assert result["s3_uri"] == "s3://bucket/gold/daily_users_metric/"
     assert result["partition_filter_values"] == {
         "platform": "X",
         "year": "2026",
@@ -438,7 +438,7 @@ def test_read_gold_dataset_rows(monkeypatch):
     assert result["row_count"] == 2
     assert result["rows"] == rows
     assert observed == {
-        "s3_uri": "s3://bucket/gold/x/daily_users_metric/",
+        "s3_uri": "s3://bucket/gold/daily_users_metric/",
         "partition_filter_values": {
             "platform": "X",
             "year": "2026",
@@ -467,7 +467,7 @@ def test_read_gold_dataset_rows_marks_missing_files(monkeypatch):
     )
 
     assert result["postgres_table"] == "hn_top_job_posts"
-    assert result["s3_uri"] == "s3://bucket/gold/hacker-news/top_job_posts/"
+    assert result["s3_uri"] == "s3://bucket/gold/top_job_posts/"
     assert result["rows"] == []
     assert result["row_count"] == 0
     assert result["missing_files"] is True
@@ -489,7 +489,7 @@ def test_read_parquet_rows_from_s3_raises_missing_dataset_for_no_files(monkeypat
 
     with pytest.raises(handler.MissingGoldDatasetFiles):
         handler.read_parquet_rows_from_s3(
-            "s3://bucket/gold/hacker-news/top_job_posts/",
+            "s3://bucket/gold/top_job_posts/",
             {
                 "platform": "HackerNews",
                 "year": "2026",
@@ -505,7 +505,7 @@ def test_read_requested_gold_datasets(monkeypatch):
             "platform": platform,
             "dataset_name": dataset_name,
             "postgres_table": f"{platform}_{dataset_name}",
-            "s3_uri": f"s3://{bucket}/{gold_prefix}/{platform}/{dataset_name}/",
+            "s3_uri": f"s3://{bucket}/{gold_prefix}/{dataset_name}/",
             "partition_filter_values": {"data_date": data_date},
             "rows": [{"id": 1}],
             "row_count": 1,
@@ -529,7 +529,7 @@ def test_read_requested_gold_datasets(monkeypatch):
         "x": {
             "daily_users_metric": {
                 "postgres_table": "x_daily_users_metric",
-                "s3_uri": "s3://bucket/gold/x/daily_users_metric/",
+                "s3_uri": "s3://bucket/gold/daily_users_metric/",
                 "partition_filter_values": {"data_date": DATA_DATE},
                 "row_count": 1,
                 "rows": [{"id": 1}],
@@ -805,7 +805,7 @@ def test_lambda_handler(monkeypatch):
             "x": {
                 "daily_users_metric": {
                     "postgres_table": "x_daily_users_metric",
-                    "s3_uri": "s3://bucket/gold/x/daily_users_metric/",
+                    "s3_uri": "s3://bucket/gold/daily_users_metric/",
                     "partition_filter_values": {
                         "platform": "X",
                         "year": "2026",
@@ -863,7 +863,7 @@ def test_lambda_handler(monkeypatch):
     assert response["request_id"] == "request-123"
     assert response["tables"]["x"]["daily_users_metric"] == {
         "postgres_table": "x_daily_users_metric",
-        "s3_uri": "s3://bucket/gold/x/daily_users_metric/",
+        "s3_uri": "s3://bucket/gold/daily_users_metric/",
         "partition_filter_values": {
             "platform": "X",
             "year": "2026",
@@ -982,7 +982,7 @@ def test_lambda_handler_rolls_back_and_closes_on_write_error(monkeypatch):
             "x": {
                 "daily_users_metric": {
                     "postgres_table": "x_daily_users_metric",
-                    "s3_uri": "s3://bucket/gold/x/daily_users_metric/",
+                    "s3_uri": "s3://bucket/gold/daily_users_metric/",
                     "partition_filter_values": {
                         "platform": "X",
                         "year": "2026",
