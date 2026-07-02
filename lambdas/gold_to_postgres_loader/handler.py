@@ -205,6 +205,10 @@ POSTGRES_TABLE_COLUMNS = {
 SUPPORTED_MODES = {"replace_date"}
 
 
+class MissingGoldDatasetFiles(Exception):
+    pass
+
+
 def _as_list(value):
     if isinstance(value, str):
         return [value]
@@ -360,6 +364,15 @@ def build_s3_uri(bucket, key_or_prefix):
     return f"s3://{normalized_bucket}/{normalized_key}"
 
 
+def is_no_files_found_error(error, awswrangler_module):
+    wr_exceptions = getattr(awswrangler_module, "exceptions", None)
+    no_files_found = getattr(wr_exceptions, "NoFilesFound", None)
+    if no_files_found is not None and isinstance(error, no_files_found):
+        return True
+
+    return error.__class__.__name__ == "NoFilesFound"
+
+
 def read_parquet_rows_from_s3(s3_uri, partition_filter_values=None):
     import awswrangler as wr
 
@@ -378,7 +391,13 @@ def read_parquet_rows_from_s3(s3_uri, partition_filter_values=None):
 
         read_kwargs["partition_filter"] = partition_filter
 
-    df = wr.s3.read_parquet(**read_kwargs)
+    try:
+        df = wr.s3.read_parquet(**read_kwargs)
+    except Exception as exc:
+        if is_no_files_found_error(exc, wr):
+            raise MissingGoldDatasetFiles(str(exc)) from exc
+        raise
+
     if df.empty:
         return []
 
@@ -394,7 +413,12 @@ def read_gold_dataset_rows(bucket, gold_prefix, platform, dataset_name, data_dat
         dataset_name,
         data_date,
     )
-    rows = read_parquet_rows_from_s3(s3_uri, partition_filter_values)
+    missing_files = False
+    try:
+        rows = read_parquet_rows_from_s3(s3_uri, partition_filter_values)
+    except MissingGoldDatasetFiles:
+        rows = []
+        missing_files = True
 
     return {
         "platform": platform,
@@ -404,6 +428,7 @@ def read_gold_dataset_rows(bucket, gold_prefix, platform, dataset_name, data_dat
         "partition_filter_values": partition_filter_values,
         "rows": rows,
         "row_count": len(rows),
+        "missing_files": missing_files,
     }
 
 
@@ -433,6 +458,8 @@ def read_requested_gold_datasets(
                 "row_count": dataset_result["row_count"],
                 "rows": dataset_result["rows"],
             }
+            if dataset_result.get("missing_files"):
+                results[platform][dataset_name]["missing_files"] = True
 
     return results
 
@@ -605,9 +632,11 @@ def lambda_handler(event, context):
         if connection is not None and hasattr(connection, "close"):
             connection.close()
 
-    tables = {
-        platform: {
-            dataset_name: {
+    tables = {}
+    for platform, platform_results in loaded_datasets.items():
+        tables[platform] = {}
+        for dataset_name, dataset_result in platform_results.items():
+            table_result = {
                 "postgres_table": dataset_result["postgres_table"],
                 "s3_uri": dataset_result["s3_uri"],
                 "partition_filter_values": dataset_result["partition_filter_values"],
@@ -616,10 +645,10 @@ def lambda_handler(event, context):
                     "inserted_row_count"
                 ],
             }
-            for dataset_name, dataset_result in platform_results.items()
-        }
-        for platform, platform_results in loaded_datasets.items()
-    }
+            if dataset_result.get("missing_files"):
+                table_result["missing_files"] = True
+                table_result["skipped"] = True
+            tables[platform][dataset_name] = table_result
 
     return {
         "source": "gold-to-postgres",
