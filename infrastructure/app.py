@@ -10,7 +10,7 @@ from infrastructure.notification_stack import NotificationStack
 
 app = cdk.App()
 data_lake_stack = DataLakeStack(app, "DataLakeStack")
-AnalyticsStack(app, "AnalyticsStack")
+analytics_stack=AnalyticsStack(app, "AnalyticsStack")
 BronzeStack(
     app,
     "BronzeStack",
@@ -25,6 +25,9 @@ GoldStack(
     app,
     "GoldStack",
     data_lake_bucket=data_lake_stack.data_lake_bucket,
+    analytics_vpc=analytics_stack.vpc,
+    analytics_security_group=analytics_stack.analytics_security_group,
+    postgres_host=analytics_stack.analytics_instance.instance_private_ip,
 )
 NotificationStack(app, "NotificationStack")
 app.synth()

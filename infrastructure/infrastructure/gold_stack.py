@@ -3,7 +3,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-
+from typing import Optional
 import jsii
 from aws_cdk import (
     BundlingOptions,
@@ -12,6 +12,7 @@ from aws_cdk import (
     ILocalBundling,
     Stack,
     aws_iam as iam,
+    aws_ec2 as ec2,
     aws_lambda as _lambda,
     aws_s3 as s3,
 )
@@ -73,6 +74,9 @@ class GoldStack(Stack):
         construct_id: str,
         *,
         data_lake_bucket: s3.IBucket,
+        analytics_vpc: Optional[ec2.IVpc] = None,
+        analytics_security_group: Optional[ec2.ISecurityGroup] = None,
+        postgres_host: Optional[str] = None,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -188,6 +192,29 @@ class GoldStack(Stack):
             environment=gold_environment,
         )
 
+        loader_security_group = None
+
+        if analytics_vpc is not None:
+            loader_security_group = ec2.SecurityGroup(
+                self,
+                "GoldToPostgresLoaderSecurityGroup",
+                vpc=analytics_vpc,
+                allow_all_outbound=True,
+                description="Security group for gold-to-postgres-loader Lambda.",
+            )
+
+        if analytics_security_group is not None and loader_security_group is not None:
+            ec2.CfnSecurityGroupIngress(
+                self,
+                "AllowGoldLoaderToPostgresIngress",
+                group_id=analytics_security_group.security_group_id,
+                ip_protocol="tcp",
+                from_port=5432,
+                to_port=5432,
+                source_security_group_id=loader_security_group.security_group_id,
+                description="Allow gold-to-postgres-loader Lambda to connect to PostgreSQL.",
+            )
+
         gold_to_postgres_loader_lambda = _lambda.Function(
             self,
             "GoldToPostgresLoaderFunction",
@@ -211,12 +238,18 @@ class GoldStack(Stack):
             layers=[aws_sdk_pandas_layer],
             timeout=Duration.minutes(5),
             memory_size=1024,
+            vpc=analytics_vpc,
+            security_groups=(
+                [loader_security_group]
+                if loader_security_group is not None
+                else None
+            ),
+            allow_public_subnet=True,
             environment={
                 "DATA_LAKE_BUCKET": data_lake_bucket.bucket_name,
                 "GOLD_PREFIX": "gold",
-                "POSTGRES_HOST": context_or_env(
-                    "postgres_host", "POSTGRES_HOST", ""
-                ),
+                "POSTGRES_HOST": postgres_host
+                    or context_or_env("postgres_host", "POSTGRES_HOST", ""),
                 "POSTGRES_PORT": context_or_env(
                     "postgres_port", "POSTGRES_PORT", "5432"
                 ),

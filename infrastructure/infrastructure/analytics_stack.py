@@ -103,6 +103,12 @@ class AnalyticsStack(Stack):
                 )
             ],
         )
+        self.vpc = vpc
+
+        vpc.add_gateway_endpoint(
+            "S3GatewayEndpoint",
+            service=ec2.GatewayVpcEndpointAwsService.S3,
+        )
         Tags.of(vpc).add("Name", "social-analytics-vpc")
 
         security_group = ec2.SecurityGroup(
@@ -112,6 +118,7 @@ class AnalyticsStack(Stack):
             allow_all_outbound=True,
             description="Security group for PostgreSQL and Superset analytics EC2.",
         )
+        self.analytics_security_group = security_group
         Tags.of(security_group).add("Name", "social-analytics-sg")
 
         analytics_peer = ec2.Peer.ipv4(allowed_cidr)
@@ -120,11 +127,11 @@ class AnalyticsStack(Stack):
             ec2.Port.tcp(8088),
             "Superset web UI access.",
         )
-        security_group.add_ingress_rule(
-            analytics_peer,
-            ec2.Port.tcp(5432),
-            "PostgreSQL demo/admin access.",
-        )
+        #security_group.add_ingress_rule(
+         #   analytics_peer,
+          #  ec2.Port.tcp(5432),
+           # "PostgreSQL demo/admin access.",
+        #)
         if key_name:
             security_group.add_ingress_rule(
                 analytics_peer,
@@ -311,6 +318,7 @@ class AnalyticsStack(Stack):
             ),
             **instance_kwargs,
         )
+        self.analytics_instance = analytics_instance
         analytics_instance.role.add_managed_policy(
             iam.ManagedPolicy.from_aws_managed_policy_name(
                 "AmazonSSMManagedInstanceCore"
