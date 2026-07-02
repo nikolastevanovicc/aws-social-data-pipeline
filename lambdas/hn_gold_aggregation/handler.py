@@ -5,6 +5,13 @@ from collections import defaultdict
 
 HN_PLATFORM = "HackerNews"
 HN_ITEM_TYPES = ("story", "ask", "comment", "job", "poll")
+HN_SILVER_TABLES = (
+    "users",
+    "posts",
+    "post_tags",
+    "post_relations",
+    "data_quality_report",
+)
 
 
 def utc_now_iso():
@@ -261,16 +268,42 @@ def build_hn_gold_tables(silver_tables, processed_at_utc):
     }
 
 
-def read_silver_table(bucket, silver_prefix, table_name, platform):
+def build_hn_silver_table_path(bucket, silver_prefix, table_name, platform, data_date):
+    normalized_prefix = silver_prefix.strip("/")
+
+    if not data_date:
+        return f"s3://{bucket}/{normalized_prefix}/{table_name}/"
+
+    parts = date_parts(data_date)
+    if not all((parts["year"], parts["month"], parts["day"])):
+        raise ValueError("data_date must be in YYYY-MM-DD format")
+
+    if table_name == "data_quality_report":
+        return (
+            f"s3://{bucket}/{normalized_prefix}/{table_name}/"
+            f"platform={platform}/data_date={data_date}/"
+        )
+
+    return (
+        f"s3://{bucket}/{normalized_prefix}/{table_name}/"
+        f"platform={platform}/year={parts['year']}/"
+        f"month={parts['month']}/day={parts['day']}/"
+    )
+
+
+def read_silver_table(bucket, silver_prefix, table_name, platform, data_date=None):
     import awswrangler as wr  # type: ignore[import-not-found]
 
-    normalized_prefix = silver_prefix.strip("/")
-    path = f"s3://{bucket}/{normalized_prefix}/{table_name}/"
-    dataframe = wr.s3.read_parquet(
-        path=path,
-        dataset=True,
-        partition_filter=lambda partition: partition.get("platform") == platform,
+    path = build_hn_silver_table_path(
+        bucket, silver_prefix, table_name, platform, data_date
     )
+    read_options = {"path": path, "dataset": True}
+    if not data_date:
+        read_options["partition_filter"] = (
+            lambda partition: partition.get("platform") == platform
+        )
+
+    dataframe = wr.s3.read_parquet(**read_options)
     return dataframe.to_dict("records")
 
 
@@ -326,19 +359,18 @@ def lambda_handler(event, context):
     if not bucket:
         raise ValueError("DATA_LAKE_BUCKET is required")
 
+    data_date = options["data_date"]
     silver_tables = {
-        "users": read_silver_table(
-            bucket, options["silver_prefix"], "users", HN_PLATFORM
-        ),
-        "posts": read_silver_table(
-            bucket, options["silver_prefix"], "posts", HN_PLATFORM
-        ),
-        "data_quality_report": read_silver_table(
-            bucket, options["silver_prefix"], "data_quality_report", HN_PLATFORM
-        ),
+        table_name: read_silver_table(
+            bucket,
+            options["silver_prefix"],
+            table_name,
+            HN_PLATFORM,
+            data_date=data_date,
+        )
+        for table_name in HN_SILVER_TABLES
     }
 
-    data_date = options["data_date"]
     if data_date:
         silver_tables = {
             table_name: filter_rows_by_data_date(rows, data_date)
