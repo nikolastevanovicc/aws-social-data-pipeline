@@ -61,6 +61,29 @@ def _analytics_template(context=None):
     return assertions.Template.from_stack(analytics_stack)
 
 
+def _analytics_template_with_network(context=None):
+    default_context = {
+        "analytics_allowed_cidr": "203.0.113.10/32",
+        "analytics_postgres_password": "dummy",
+        "analytics_superset_secret_key": "dummy",
+    }
+    if context is not None:
+        default_context.update(context)
+
+    app = core.App(context=default_context)
+    network_stack = NetworkStack(app, "network")
+    analytics_stack = AnalyticsStack(
+        app,
+        "analytics",
+        vpc=network_stack.vpc,
+        analytics_security_group=network_stack.analytics_security_group,
+    )
+    return (
+        assertions.Template.from_stack(network_stack),
+        assertions.Template.from_stack(analytics_stack),
+    )
+
+
 def _notification_template(context=None):
     app = core.App(context=context or {})
     notification_stack = NotificationStack(app, "notification")
@@ -420,7 +443,7 @@ def test_analytics_instance_type_can_be_configured():
     )
 
 
-def test_analytics_security_group_allows_superset_and_postgres_ports():
+def test_analytics_fallback_security_group_allows_superset_only():
     analytics_template = _analytics_stack()
 
     analytics_template.has_resource_properties(
@@ -440,23 +463,52 @@ def test_analytics_security_group_allows_superset_and_postgres_ports():
             )
         },
     )
-    analytics_template.has_resource_properties(
-        "AWS::EC2::SecurityGroup",
-        {
-            "SecurityGroupIngress": assertions.Match.array_with(
-                [
-                    assertions.Match.object_like(
-                        {
-                            "IpProtocol": "tcp",
-                            "FromPort": 5432,
-                            "ToPort": 5432,
-                            "CidrIp": "0.0.0.0/0",
-                        }
-                    )
-                ]
-            )
-        },
+    assert not _has_public_postgres_ingress(analytics_template)
+
+
+def test_analytics_stack_synthesizes_with_shared_network():
+    _, analytics_template = _analytics_template_with_network()
+
+    analytics_template.resource_count_is("AWS::EC2::Instance", 1)
+    analytics_template.resource_count_is("AWS::EC2::VPC", 0)
+    analytics_template.resource_count_is("AWS::EC2::SecurityGroup", 0)
+
+
+def test_analytics_instance_uses_shared_security_group():
+    _, analytics_template = _analytics_template_with_network()
+    instance = _analytics_instance(analytics_template)
+
+    group_set = instance["Properties"]["NetworkInterfaces"][0]["GroupSet"]
+
+    assert "AnalyticsSecurityGroup" in repr(group_set)
+
+
+def test_analytics_instance_uses_shared_public_subnet():
+    _, analytics_template = _analytics_template_with_network()
+    instance = _analytics_instance(analytics_template)
+    network_interface = instance["Properties"]["NetworkInterfaces"][0]
+
+    assert network_interface["AssociatePublicIpAddress"] is True
+    assert "publicSubnet" in repr(network_interface["SubnetId"])
+
+
+def test_analytics_outputs_private_postgres_host():
+    _, analytics_template = _analytics_template_with_network()
+
+    analytics_template.has_output(
+        "PostgresPrivateHost",
+        {"Value": assertions.Match.any_value()},
     )
+    assert "PrivateIp" in repr(
+        analytics_template.to_json()["Outputs"]["PostgresPrivateHost"]["Value"]
+    )
+
+
+def test_shared_network_does_not_allow_public_postgres_ingress():
+    network_template, analytics_template = _analytics_template_with_network()
+
+    assert not _has_public_postgres_ingress(network_template)
+    assert not _has_public_postgres_ingress(analytics_template)
 
 
 def test_network_stack_synthesizes_vpc():
@@ -615,6 +667,7 @@ def test_analytics_outputs_are_synthesized():
         "AnalyticsPublicDnsName",
         "SupersetUrl",
         "PostgresHost",
+        "PostgresPrivateHost",
         "PostgresPort",
         "AnalyticsAutoStopUtcHour",
     ]:
@@ -768,6 +821,16 @@ def _network_ingress_rules(network_template):
             ingress_rules.append(resource["Properties"])
 
     return ingress_rules
+
+
+def _has_public_postgres_ingress(template):
+    return any(
+        ingress_rule.get("IpProtocol") == "tcp"
+        and ingress_rule.get("FromPort") == 5432
+        and ingress_rule.get("ToPort") == 5432
+        and ingress_rule.get("CidrIp") == "0.0.0.0/0"
+        for ingress_rule in _network_ingress_rules(template)
+    )
 
 
 def _as_list(value):

@@ -15,7 +15,15 @@ from constructs import Construct
 
 class AnalyticsStack(Stack):
 
-    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    def __init__(
+        self,
+        scope: Construct,
+        construct_id: str,
+        *,
+        vpc: ec2.IVpc | None = None,
+        analytics_security_group: ec2.ISecurityGroup | None = None,
+        **kwargs,
+    ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
         repo_root = Path(__file__).resolve().parents[2]
@@ -90,47 +98,48 @@ class AnalyticsStack(Stack):
             "change-me",
         )
 
-        vpc = ec2.Vpc(
-            self,
-            "AnalyticsVpc",
-            max_azs=2,
-            nat_gateways=0,
-            subnet_configuration=[
-                ec2.SubnetConfiguration(
-                    name="public",
-                    subnet_type=ec2.SubnetType.PUBLIC,
-                    cidr_mask=24,
-                )
-            ],
-        )
-        Tags.of(vpc).add("Name", "social-analytics-vpc")
-
-        security_group = ec2.SecurityGroup(
-            self,
-            "AnalyticsSecurityGroup",
-            vpc=vpc,
-            allow_all_outbound=True,
-            description="Security group for PostgreSQL and Superset analytics EC2.",
-        )
-        Tags.of(security_group).add("Name", "social-analytics-sg")
-
-        analytics_peer = ec2.Peer.ipv4(allowed_cidr)
-        security_group.add_ingress_rule(
-            analytics_peer,
-            ec2.Port.tcp(8088),
-            "Superset web UI access.",
-        )
-        security_group.add_ingress_rule(
-            analytics_peer,
-            ec2.Port.tcp(5432),
-            "PostgreSQL demo/admin access.",
-        )
-        if key_name:
-            security_group.add_ingress_rule(
-                analytics_peer,
-                ec2.Port.tcp(22),
-                "SSH access for configured key pair.",
+        if (vpc is None) != (analytics_security_group is None):
+            raise ValueError(
+                "vpc and analytics_security_group must be provided together."
             )
+
+        if vpc is None:
+            vpc = ec2.Vpc(
+                self,
+                "AnalyticsVpc",
+                max_azs=2,
+                nat_gateways=0,
+                subnet_configuration=[
+                    ec2.SubnetConfiguration(
+                        name="public",
+                        subnet_type=ec2.SubnetType.PUBLIC,
+                        cidr_mask=24,
+                    )
+                ],
+            )
+            Tags.of(vpc).add("Name", "social-analytics-vpc")
+
+            analytics_security_group = ec2.SecurityGroup(
+                self,
+                "AnalyticsSecurityGroup",
+                vpc=vpc,
+                allow_all_outbound=True,
+                description="Security group for PostgreSQL and Superset analytics EC2.",
+            )
+            Tags.of(analytics_security_group).add("Name", "social-analytics-sg")
+
+            analytics_peer = ec2.Peer.ipv4(allowed_cidr)
+            analytics_security_group.add_ingress_rule(
+                analytics_peer,
+                ec2.Port.tcp(8088),
+                "Superset web UI access.",
+            )
+            if key_name:
+                analytics_security_group.add_ingress_rule(
+                    analytics_peer,
+                    ec2.Port.tcp(22),
+                    "SSH access for configured key pair.",
+                )
 
         init_elements = [
             ec2.InitFile.from_string(
@@ -298,7 +307,7 @@ class AnalyticsStack(Stack):
             machine_image=ec2.MachineImage.latest_amazon_linux2023(),
             vpc=vpc,
             vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
-            security_group=security_group,
+            security_group=analytics_security_group,
             associate_public_ip_address=True,
             instance_initiated_shutdown_behavior=(
                 ec2.InstanceInitiatedShutdownBehavior.STOP
@@ -317,6 +326,7 @@ class AnalyticsStack(Stack):
             )
         )
         Tags.of(analytics_instance).add("Name", "social-analytics-ec2")
+        self.postgres_private_host = analytics_instance.instance_private_ip
 
         CfnOutput(
             self,
@@ -345,6 +355,11 @@ class AnalyticsStack(Stack):
             self,
             "PostgresHost",
             value=analytics_instance.instance_public_dns_name,
+        )
+        CfnOutput(
+            self,
+            "PostgresPrivateHost",
+            value=self.postgres_private_host,
         )
         CfnOutput(
             self,

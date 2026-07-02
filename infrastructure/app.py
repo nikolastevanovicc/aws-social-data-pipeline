@@ -11,14 +11,19 @@ from infrastructure.notification_stack import NotificationStack
 
 app = cdk.App()
 data_lake_stack = DataLakeStack(app, "DataLakeStack")
-NetworkStack(
+network_stack = NetworkStack(
     app,
     "NetworkStack",
     analytics_allowed_cidr=(
         app.node.try_get_context("analytics_allowed_cidr") or "127.0.0.1/32"
     ),
 )
-AnalyticsStack(app, "AnalyticsStack")
+AnalyticsStack(
+    app,
+    "AnalyticsStack",
+    vpc=network_stack.vpc,
+    analytics_security_group=network_stack.analytics_security_group,
+)
 BronzeStack(
     app,
     "BronzeStack",
