@@ -5,11 +5,19 @@ from infrastructure.analytics_stack import AnalyticsStack
 from infrastructure.bronze_stack import BronzeStack
 from infrastructure.data_lake_stack import DataLakeStack
 from infrastructure.gold_stack import GoldStack
+from infrastructure.network_stack import NetworkStack
 from infrastructure.silver_stack import SilverStack
 from infrastructure.notification_stack import NotificationStack
 
 app = cdk.App()
 data_lake_stack = DataLakeStack(app, "DataLakeStack")
+NetworkStack(
+    app,
+    "NetworkStack",
+    analytics_allowed_cidr=(
+        app.node.try_get_context("analytics_allowed_cidr") or "127.0.0.1/32"
+    ),
+)
 AnalyticsStack(app, "AnalyticsStack")
 BronzeStack(
     app,

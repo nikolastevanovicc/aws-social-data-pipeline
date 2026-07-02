@@ -10,6 +10,7 @@ from infrastructure.analytics_stack import AnalyticsStack
 from infrastructure.bronze_stack import BronzeStack
 from infrastructure.data_lake_stack import DataLakeStack
 from infrastructure.gold_stack import GoldStack
+from infrastructure.network_stack import NetworkStack
 from infrastructure.notification_stack import NotificationStack
 from infrastructure.silver_stack import SilverStack
 
@@ -64,6 +65,16 @@ def _notification_template(context=None):
     app = core.App(context=context or {})
     notification_stack = NotificationStack(app, "notification")
     return assertions.Template.from_stack(notification_stack)
+
+
+def _network_template(analytics_allowed_cidr="203.0.113.10/32", context=None):
+    app = core.App(context=context or {})
+    stack_kwargs = {}
+    if analytics_allowed_cidr is not None:
+        stack_kwargs["analytics_allowed_cidr"] = analytics_allowed_cidr
+
+    network_stack = NetworkStack(app, "network", **stack_kwargs)
+    return assertions.Template.from_stack(network_stack)
 
 
 def _all_templates():
@@ -448,6 +459,153 @@ def test_analytics_security_group_allows_superset_and_postgres_ports():
     )
 
 
+def test_network_stack_synthesizes_vpc():
+    network_template = _network_template()
+
+    network_template.resource_count_is("AWS::EC2::VPC", 1)
+
+
+def test_network_stack_creates_public_and_private_subnets():
+    network_template = _network_template()
+
+    network_template.resource_count_is("AWS::EC2::Subnet", 4)
+    network_template.has_resource_properties(
+        "AWS::EC2::Subnet",
+        {
+            "MapPublicIpOnLaunch": True,
+            "Tags": assertions.Match.array_with(
+                [{"Key": "aws-cdk:subnet-type", "Value": "Public"}]
+            ),
+        },
+    )
+    network_template.has_resource_properties(
+        "AWS::EC2::Subnet",
+        {
+            "MapPublicIpOnLaunch": False,
+            "Tags": assertions.Match.array_with(
+                [{"Key": "aws-cdk:subnet-type", "Value": "Private"}]
+            ),
+        },
+    )
+
+
+def test_network_stack_creates_exactly_one_nat_gateway():
+    network_template = _network_template()
+
+    network_template.resource_count_is("AWS::EC2::NatGateway", 1)
+
+
+def test_network_stack_creates_s3_gateway_endpoint():
+    network_template = _network_template()
+
+    network_template.has_resource_properties(
+        "AWS::EC2::VPCEndpoint",
+        {
+            "VpcEndpointType": "Gateway",
+            "ServiceName": assertions.Match.object_like(
+                {"Fn::Join": assertions.Match.any_value()}
+            ),
+        },
+    )
+    assert ".s3" in repr(network_template.to_json())
+
+
+def test_network_stack_outputs_reusable_resource_ids():
+    network_template = _network_template()
+
+    for output_name in [
+        "VpcId",
+        "PipelineLambdaSecurityGroupId",
+        "AnalyticsSecurityGroupId",
+    ]:
+        network_template.has_output(
+            output_name,
+            {"Value": assertions.Match.any_value()},
+        )
+
+
+def test_network_stack_allows_superset_from_configured_cidr():
+    allowed_cidr = "203.0.113.10/32"
+    network_template = _network_template(allowed_cidr)
+
+    network_template.has_resource_properties(
+        "AWS::EC2::SecurityGroup",
+        {
+            "SecurityGroupIngress": assertions.Match.array_with(
+                [
+                    assertions.Match.object_like(
+                        {
+                            "IpProtocol": "tcp",
+                            "FromPort": 8088,
+                            "ToPort": 8088,
+                            "CidrIp": allowed_cidr,
+                        }
+                    )
+                ]
+            )
+        },
+    )
+
+
+def test_network_stack_resolves_allowed_cidr_from_context():
+    allowed_cidr = "198.51.100.24/32"
+    network_template = _network_template(
+        analytics_allowed_cidr=None,
+        context={"analytics_allowed_cidr": allowed_cidr},
+    )
+
+    network_template.has_resource_properties(
+        "AWS::EC2::SecurityGroup",
+        {
+            "SecurityGroupIngress": assertions.Match.array_with(
+                [
+                    assertions.Match.object_like(
+                        {
+                            "IpProtocol": "tcp",
+                            "FromPort": 8088,
+                            "ToPort": 8088,
+                            "CidrIp": allowed_cidr,
+                        }
+                    )
+                ]
+            )
+        },
+    )
+
+
+def test_network_stack_allows_postgres_from_pipeline_lambda_security_group():
+    network_template = _network_template()
+
+    network_template.has_resource_properties(
+        "AWS::EC2::SecurityGroupIngress",
+        {
+            "IpProtocol": "tcp",
+            "FromPort": 5432,
+            "ToPort": 5432,
+            "SourceSecurityGroupId": assertions.Match.any_value(),
+        },
+    )
+
+
+def test_network_stack_does_not_allow_postgres_from_world():
+    network_template = _network_template()
+
+    for ingress_rule in _network_ingress_rules(network_template):
+        assert not (
+            ingress_rule.get("IpProtocol") == "tcp"
+            and ingress_rule.get("FromPort") == 5432
+            and ingress_rule.get("ToPort") == 5432
+            and ingress_rule.get("CidrIp") == "0.0.0.0/0"
+        )
+
+
+def test_network_stack_requires_analytics_allowed_cidr():
+    app = core.App()
+
+    with pytest.raises(ValueError, match="analytics_allowed_cidr.*-c"):
+        NetworkStack(app, "network")
+
+
 def test_analytics_outputs_are_synthesized():
     analytics_template = _analytics_stack()
 
@@ -597,6 +755,19 @@ def _analytics_instance(analytics_template):
 
     assert len(instances) == 1
     return instances[0]
+
+
+def _network_ingress_rules(network_template):
+    template_json = network_template.to_json()
+    ingress_rules = []
+
+    for resource in template_json["Resources"].values():
+        if resource["Type"] == "AWS::EC2::SecurityGroup":
+            ingress_rules.extend(resource["Properties"].get("SecurityGroupIngress", []))
+        elif resource["Type"] == "AWS::EC2::SecurityGroupIngress":
+            ingress_rules.append(resource["Properties"])
+
+    return ingress_rules
 
 
 def _as_list(value):
