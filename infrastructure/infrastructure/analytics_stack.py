@@ -3,10 +3,12 @@ from pathlib import Path
 
 from aws_cdk import (
     CfnOutput,
+    Duration,
     Fn,
     Stack,
     Tags,
     aws_ec2 as ec2,
+    aws_iam as iam,
 )
 from constructs import Construct
 
@@ -130,85 +132,124 @@ class AnalyticsStack(Stack):
                 "SSH access for configured key pair.",
             )
 
-        user_data = ec2.UserData.for_linux()
-        user_data_commands = [
-            "set -euxo pipefail",
-            "dnf update -y",
-            "dnf install -y docker curl",
+        init_elements = [
+            ec2.InitFile.from_string(
+                "/opt/social-analytics/docker-compose.yml", compose_content
+            ),
+            ec2.InitFile.from_string(
+                "/opt/social-analytics/superset/Dockerfile",
+                superset_dockerfile_content,
+            ),
+            ec2.InitFile.from_string(
+                "/opt/social-analytics/.env",
+                "\n".join(
+                    [
+                        f"POSTGRES_DB={postgres_db}",
+                        f"POSTGRES_USER={postgres_user}",
+                        f"POSTGRES_PASSWORD={postgres_password}",
+                        f"SUPERSET_ADMIN_USERNAME={superset_admin_username}",
+                        f"SUPERSET_ADMIN_PASSWORD={superset_admin_password}",
+                        "SUPERSET_ADMIN_FIRST_NAME=Admin",
+                        "SUPERSET_ADMIN_LAST_NAME=User",
+                        "SUPERSET_ADMIN_EMAIL=admin@example.com",
+                        f"SUPERSET_SECRET_KEY={superset_secret_key}",
+                    ]
+                ),
+                mode="000600",
+            ),
+            ec2.InitFile.from_string(
+                "/opt/social-analytics/superset-init.sh", superset_init_content
+            ),
+            ec2.InitFile.from_string(
+                "/opt/social-analytics/schema.sql", schema_content
+            ),
+            ec2.InitFile.from_string(
+                "/opt/social-analytics/views.sql", views_content
+            ),
         ]
         if auto_stop_enabled:
-            user_data_commands.extend(
-                [
-                    "# Demo cost guardrail: keep cron in UTC for predictable auto-stop.",
-                    "timedatectl set-timezone UTC",
-                    "dnf install -y cronie",
-                    "systemctl enable --now crond",
-                    self._write_file_command(
-                        "/etc/cron.d/social-analytics-auto-stop",
-                        "\n".join(
-                            [
-                                (
-                                    "# Demo cost guardrail: stop this EC2 instance "
-                                    "daily to reduce accidental runtime cost."
-                                ),
-                                (
-                                    f"0 {auto_stop_utc_hour} * * * root "
-                                    "/sbin/shutdown -h now"
-                                ),
-                            ]
-                        ),
+            init_elements.append(
+                ec2.InitFile.from_string(
+                    "/etc/cron.d/social-analytics-auto-stop",
+                    "\n".join(
+                        [
+                            (
+                                "# Demo cost guardrail: stop this EC2 instance "
+                                "daily to reduce accidental runtime cost."
+                            ),
+                            (
+                                f"0 {auto_stop_utc_hour} * * * root "
+                                "/sbin/shutdown -h now"
+                            ),
+                        ]
                     ),
-                    "chmod 644 /etc/cron.d/social-analytics-auto-stop",
+                    mode="000644",
+                )
+            )
+
+        setup_commands = [
+            ec2.InitCommand.shell_command(
+                "dnf update -y",
+                key="00-update-packages",
+            ),
+            ec2.InitCommand.shell_command(
+                "dnf install -y docker cronie",
+                key="01-install-base-packages",
+            ),
+        ]
+        if auto_stop_enabled:
+            setup_commands.extend(
+                [
+                    ec2.InitCommand.shell_command(
+                        "timedatectl set-timezone UTC",
+                        key="02-set-utc-timezone",
+                    ),
+                    ec2.InitCommand.shell_command(
+                        "systemctl enable --now crond",
+                        key="03-enable-crond",
+                    ),
                 ]
             )
-        user_data_commands.extend(
+        setup_commands.extend(
             [
-                "systemctl enable --now docker",
-                "mkdir -p /usr/local/lib/docker/cli-plugins",
-                (
-                    "if ! docker compose version >/dev/null 2>&1; then "
+                ec2.InitCommand.shell_command(
+                    "systemctl enable --now docker",
+                    key="04-enable-docker",
+                ),
+                ec2.InitCommand.shell_command(
+                    "mkdir -p /usr/local/lib/docker/cli-plugins",
+                    key="05-create-compose-plugin-dir",
+                ),
+                ec2.InitCommand.shell_command(
                     "ARCH=$(uname -m); "
                     "case \"$ARCH\" in x86_64) COMPOSE_ARCH=x86_64 ;; "
                     "aarch64) COMPOSE_ARCH=aarch64 ;; "
                     "*) echo \"Unsupported architecture: $ARCH\" >&2; exit 1 ;; "
                     "esac; "
-                    "curl -SL "
+                    "curl -fSL "
                     "https://github.com/docker/compose/releases/download/v2.29.7/"
                     "docker-compose-linux-${COMPOSE_ARCH} "
                     "-o /usr/local/lib/docker/cli-plugins/docker-compose; "
                     "chmod +x /usr/local/lib/docker/cli-plugins/docker-compose; "
-                    "fi"
+                    "docker compose version",
+                    key="06-install-docker-compose",
                 ),
-                "mkdir -p /opt/social-analytics/superset",
-                "cd /opt/social-analytics",
-                self._write_file_command("docker-compose.yml", compose_content),
-                self._write_file_command(
-                    "superset/Dockerfile", superset_dockerfile_content
+                ec2.InitCommand.shell_command(
+                    "chmod +x superset-init.sh",
+                    cwd="/opt/social-analytics",
+                    key="07-make-superset-init-executable",
                 ),
-                self._write_file_command(
-                    ".env",
-                    "\n".join(
-                        [
-                            f"POSTGRES_DB={postgres_db}",
-                            f"POSTGRES_USER={postgres_user}",
-                            f"POSTGRES_PASSWORD={postgres_password}",
-                            f"SUPERSET_ADMIN_USERNAME={superset_admin_username}",
-                            f"SUPERSET_ADMIN_PASSWORD={superset_admin_password}",
-                            "SUPERSET_ADMIN_FIRST_NAME=Admin",
-                            "SUPERSET_ADMIN_LAST_NAME=User",
-                            "SUPERSET_ADMIN_EMAIL=admin@example.com",
-                            f"SUPERSET_SECRET_KEY={superset_secret_key}",
-                        ]
-                    ),
+                ec2.InitCommand.shell_command(
+                    "docker compose pull postgres",
+                    cwd="/opt/social-analytics",
+                    key="08-pull-postgres-image",
                 ),
-                self._write_file_command("superset-init.sh", superset_init_content),
-                self._write_file_command("schema.sql", schema_content),
-                self._write_file_command("views.sql", views_content),
-                "chmod 600 .env",
-                "chmod +x superset-init.sh",
-                "docker compose pull postgres",
-                "docker compose up -d --build",
-                (
+                ec2.InitCommand.shell_command(
+                    "docker compose up -d --build",
+                    cwd="/opt/social-analytics",
+                    key="09-start-analytics-containers",
+                ),
+                ec2.InitCommand.shell_command(
                     "POSTGRES_READY=0; "
                     "for attempt in $(seq 1 60); do "
                     "if docker inspect -f '{{.State.Health.Status}}' "
@@ -220,21 +261,30 @@ class AnalyticsStack(Stack):
                     "if [ \"$POSTGRES_READY\" != \"1\" ]; then "
                     "docker logs social-analytics-postgres; "
                     "exit 1; "
-                    "fi"
+                    "fi",
+                    key="10-wait-for-postgres",
                 ),
-                (
+                ec2.InitCommand.shell_command(
                     "docker compose exec -T postgres sh -c "
                     "'psql -v ON_ERROR_STOP=1 -U \"$POSTGRES_USER\" "
-                    "-d \"$POSTGRES_DB\"' < schema.sql"
+                    "-d \"$POSTGRES_DB\"' < schema.sql",
+                    cwd="/opt/social-analytics",
+                    key="11-apply-postgres-schema",
                 ),
-                (
+                ec2.InitCommand.shell_command(
                     "docker compose exec -T postgres sh -c "
                     "'psql -v ON_ERROR_STOP=1 -U \"$POSTGRES_USER\" "
-                    "-d \"$POSTGRES_DB\"' < views.sql"
+                    "-d \"$POSTGRES_DB\"' < views.sql",
+                    cwd="/opt/social-analytics",
+                    key="12-apply-postgres-views",
                 ),
             ]
         )
-        user_data.add_commands(*user_data_commands)
+
+        analytics_init = ec2.CloudFormationInit.from_elements(
+            *init_elements,
+            *setup_commands,
+        )
 
         instance_kwargs = {}
         if key_name:
@@ -253,8 +303,18 @@ class AnalyticsStack(Stack):
             instance_initiated_shutdown_behavior=(
                 ec2.InstanceInitiatedShutdownBehavior.STOP
             ),
-            user_data=user_data,
+            init=analytics_init,
+            init_options=ec2.ApplyCloudFormationInitOptions(
+                ignore_failures=True,
+                print_log=True,
+                timeout=Duration.minutes(30),
+            ),
             **instance_kwargs,
+        )
+        analytics_instance.role.add_managed_policy(
+            iam.ManagedPolicy.from_aws_managed_policy_name(
+                "AmazonSSMManagedInstanceCore"
+            )
         )
         Tags.of(analytics_instance).add("Name", "social-analytics-ec2")
 

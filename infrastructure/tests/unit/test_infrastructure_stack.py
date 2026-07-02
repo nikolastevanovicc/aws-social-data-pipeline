@@ -459,37 +459,41 @@ def test_analytics_outputs_are_synthesized():
         )
 
 
-def test_analytics_user_data_is_synthesized():
-    analytics_template = _analytics_stack()
-    template_json = analytics_template.to_json()
-
-    instances = [
-        resource
-        for resource in template_json["Resources"].values()
-        if resource["Type"] == "AWS::EC2::Instance"
-    ]
-
-    assert len(instances) == 1
-    user_data = repr(instances[0]["Properties"].get("UserData"))
-    assert "docker compose up -d --build" in user_data
-    assert "social-analytics-postgres" in user_data
-    assert "superset/Dockerfile" in user_data
-    assert "psycopg2-binary" in user_data
-    assert "schema.sql" in user_data
-    assert "views.sql" in user_data
-    assert user_data.index("< schema.sql") < user_data.index("< views.sql")
-
-
-def test_analytics_user_data_contains_default_shutdown_cron():
+def test_analytics_cloudformation_init_is_synthesized():
     analytics_template = _analytics_stack()
     user_data = _analytics_instance_user_data(analytics_template)
+    init_metadata = _analytics_instance_init_metadata(analytics_template)
 
-    assert "Demo cost guardrail" in user_data
-    assert "social-analytics-auto-stop" in user_data
-    assert "/sbin/shutdown -h now" in user_data
-    assert "0 22 * * * root" in user_data
-    assert "docker compose pull postgres" in user_data
-    assert user_data.index("social-analytics-auto-stop") < user_data.index(
+    assert "cfn-init" in user_data
+    assert "docker compose up -d --build" not in user_data
+    assert "docker compose up -d --build" in init_metadata
+    assert "social-analytics-postgres" in init_metadata
+    assert "/opt/social-analytics/superset/Dockerfile" in init_metadata
+    assert "psycopg2-binary" in init_metadata
+    assert "/opt/social-analytics/schema.sql" in init_metadata
+    assert "/opt/social-analytics/views.sql" in init_metadata
+    assert "docker-compose-linux-${COMPOSE_ARCH}" in init_metadata
+    assert "curl -fSL" in init_metadata
+    assert "cfn-signal -e 0" in user_data
+    assert init_metadata.index("< schema.sql") < init_metadata.index("< views.sql")
+
+
+def test_analytics_instance_has_ssm_managed_policy():
+    analytics_template = _analytics_stack()
+
+    assert "AmazonSSMManagedInstanceCore" in repr(analytics_template.to_json())
+
+
+def test_analytics_cloudformation_init_contains_default_shutdown_cron():
+    analytics_template = _analytics_stack()
+    init_metadata = _analytics_instance_init_metadata(analytics_template)
+
+    assert "Demo cost guardrail" in init_metadata
+    assert "social-analytics-auto-stop" in init_metadata
+    assert "/sbin/shutdown -h now" in init_metadata
+    assert "0 22 * * * root" in init_metadata
+    assert "docker compose pull postgres" in init_metadata
+    assert init_metadata.index("social-analytics-auto-stop") < init_metadata.index(
         "docker compose pull postgres"
     )
 
@@ -497,10 +501,10 @@ def test_analytics_user_data_contains_default_shutdown_cron():
 def test_analytics_auto_stop_can_be_disabled():
     analytics_template = _analytics_template({"analytics_auto_stop_enabled": "false"})
     template_json = analytics_template.to_json()
-    user_data = _analytics_instance_user_data(analytics_template)
+    init_metadata = _analytics_instance_init_metadata(analytics_template)
 
-    assert "social-analytics-auto-stop" not in user_data
-    assert "/sbin/shutdown -h now" not in user_data
+    assert "social-analytics-auto-stop" not in init_metadata
+    assert "/sbin/shutdown -h now" not in init_metadata
     assert "AnalyticsAutoStopUtcHour" not in template_json.get("Outputs", {})
 
 
@@ -510,6 +514,16 @@ def test_analytics_invalid_auto_stop_hour_raises_value_error():
 
 
 def _analytics_instance_user_data(analytics_template):
+    instance = _analytics_instance(analytics_template)
+    return repr(instance["Properties"].get("UserData"))
+
+
+def _analytics_instance_init_metadata(analytics_template):
+    instance = _analytics_instance(analytics_template)
+    return repr(instance["Metadata"].get("AWS::CloudFormation::Init"))
+
+
+def _analytics_instance(analytics_template):
     template_json = analytics_template.to_json()
     instances = [
         resource
@@ -518,7 +532,7 @@ def _analytics_instance_user_data(analytics_template):
     ]
 
     assert len(instances) == 1
-    return repr(instances[0]["Properties"].get("UserData"))
+    return instances[0]
 
 
 def _as_list(value):
