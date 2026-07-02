@@ -90,6 +90,7 @@ class GoldStack(Stack):
             assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
             description="Least-privilege role for gold aggregation Lambdas.",
         )
+        self._add_vpc_access_policy_if_needed(gold_lambda_role, vpc)
 
         gold_lambda_role.add_to_policy(
             iam.PolicyStatement(
@@ -156,6 +157,29 @@ class GoldStack(Stack):
             Path(__file__).resolve().parents[2] / "lambdas/gold_to_postgres_loader"
         )
 
+        gold_to_postgres_loader_role = iam.Role(
+            self,
+            "GoldToPostgresLoaderLambdaRole",
+            assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
+            description="Least-privilege role for gold-to-Postgres loader Lambda.",
+        )
+        self._add_vpc_access_policy_if_needed(gold_to_postgres_loader_role, vpc)
+
+        gold_to_postgres_loader_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["logs:CreateLogGroup"],
+                resources=[f"arn:aws:logs:{self.region}:{self.account}:*"],
+            )
+        )
+        gold_to_postgres_loader_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["logs:CreateLogStream", "logs:PutLogEvents"],
+                resources=[
+                    f"arn:aws:logs:{self.region}:{self.account}:log-group:/aws/lambda/*:*"
+                ],
+            )
+        )
+
         def context_or_env(context_key: str, env_key: str, default: str) -> str:
             return str(
                 self.node.try_get_context(context_key) or os.getenv(env_key, default)
@@ -218,6 +242,7 @@ class GoldStack(Stack):
                 ),
             ),
             layers=[aws_sdk_pandas_layer],
+            role=gold_to_postgres_loader_role,
             timeout=Duration.minutes(5),
             memory_size=1024,
             environment={
@@ -279,3 +304,14 @@ class GoldStack(Stack):
             ),
             "security_groups": [lambda_security_group],
         }
+
+    def _add_vpc_access_policy_if_needed(
+        self, role: iam.Role, vpc: ec2.IVpc | None
+    ) -> None:
+        if vpc is None:
+            return
+        role.add_managed_policy(
+            iam.ManagedPolicy.from_aws_managed_policy_name(
+                "service-role/AWSLambdaVPCAccessExecutionRole"
+            )
+        )

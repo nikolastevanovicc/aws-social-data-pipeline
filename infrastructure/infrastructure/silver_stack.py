@@ -35,6 +35,7 @@ class SilverStack(Stack):
             assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
             description="Least-privilege role for silver normalization Lambdas.",
         )
+        self._add_vpc_access_policy_if_needed(silver_lambda_role, vpc)
 
         silver_lambda_role.add_to_policy(
             iam.PolicyStatement(
@@ -162,3 +163,14 @@ class SilverStack(Stack):
             ),
             "security_groups": [lambda_security_group],
         }
+
+    def _add_vpc_access_policy_if_needed(
+        self, role: iam.Role, vpc: ec2.IVpc | None
+    ) -> None:
+        if vpc is None:
+            return
+        role.add_managed_policy(
+            iam.ManagedPolicy.from_aws_managed_policy_name(
+                "service-role/AWSLambdaVPCAccessExecutionRole"
+            )
+        )
