@@ -5,11 +5,18 @@ Apache Superset on one public EC2 instance with Docker Compose. It is intended
 for KT2 visualization work and simple demo/admin access, not as a production
 database design.
 
-The stack creates:
+In the full CDK app, `AnalyticsStack` runs inside the shared `NetworkStack`
+VPC. `NetworkStack` creates the VPC, public subnets, private subnets with
+egress, NAT Gateway, S3 Gateway Endpoint, `PipelineLambdaSecurityGroup`, and
+`AnalyticsSecurityGroup`.
 
-- a small public VPC with no NAT gateways
+The combined networked deployment creates:
+
+- an analytics EC2 instance in the shared VPC public subnet
 - one Amazon Linux 2023 EC2 instance, defaulting to `t3.small`
-- a security group for Superset and PostgreSQL access
+- security-group access from `PipelineLambdaSecurityGroup` to
+  `AnalyticsSecurityGroup` on tcp/5432 for PostgreSQL
+- Superset access on tcp/8088 only from `analytics_allowed_cidr`
 - EC2 user data that installs Docker, installs Docker Compose support, writes
   the analytics Docker Compose files, writes the custom Superset Dockerfile,
   builds Superset with PostgreSQL driver support, starts PostgreSQL and
@@ -20,19 +27,33 @@ The stack creates:
 
 ```bash
 cd infrastructure
+export DISCORD_WEBHOOK_URL='replace-with-discord-webhook-url'
 
-cdk synth AnalyticsStack \
+cdk synth NetworkStack AnalyticsStack \
   -c analytics_allowed_cidr=x.x.x.x/32 \
   -c analytics_postgres_password='replace-me' \
   -c analytics_superset_secret_key='replace-me'
 ```
 
-## Deploy Only AnalyticsStack
+For a demo or presentation, use your current public IP as a `/32`:
 
 ```bash
 cd infrastructure
+export DISCORD_WEBHOOK_URL='replace-with-discord-webhook-url'
 
-cdk deploy AnalyticsStack \
+cdk synth NetworkStack AnalyticsStack \
+  -c analytics_allowed_cidr="$(curl -s https://checkip.amazonaws.com)/32" \
+  -c analytics_postgres_password='replace-me' \
+  -c analytics_superset_secret_key='replace-me'
+```
+
+## Deploy Networked Analytics
+
+```bash
+cd infrastructure
+export DISCORD_WEBHOOK_URL='replace-with-discord-webhook-url'
+
+cdk deploy NetworkStack AnalyticsStack \
   -c analytics_allowed_cidr=x.x.x.x/32 \
   -c analytics_instance_type=t3.micro \
   -c analytics_postgres_password='replace-me' \
@@ -54,7 +75,7 @@ Supported CDK context keys and environment variables:
 
 | Purpose | Context key | Environment variable | Default |
 | --- | --- | --- | --- |
-| Inbound access CIDR | `analytics_allowed_cidr` | `ANALYTICS_ALLOWED_CIDR` | `0.0.0.0/0` |
+| Inbound access CIDR | `analytics_allowed_cidr` | `ANALYTICS_ALLOWED_CIDR` | provide a real `/32` for shared app deploys |
 | Optional EC2 SSH key pair | `analytics_key_name` | `ANALYTICS_KEY_NAME` | empty |
 | EC2 instance type | `analytics_instance_type` | `ANALYTICS_INSTANCE_TYPE` | `t3.small` |
 | Enable daily auto-stop | `analytics_auto_stop_enabled` | `ANALYTICS_AUTO_STOP_ENABLED` | `true` |
@@ -67,8 +88,10 @@ Supported CDK context keys and environment variables:
 | Superset secret key | `analytics_superset_secret_key` | `ANALYTICS_SUPERSET_SECRET_KEY` | `change-me` |
 
 For real usage, set `analytics_allowed_cidr` to your own `/32` public IP.
-The default `0.0.0.0/0` is only for demos and opens Superset and PostgreSQL to
-the internet.
+Do not use `0.0.0.0/0` as a Lambda-to-PostgreSQL workaround. In the shared VPC
+architecture, PostgreSQL access comes from `PipelineLambdaSecurityGroup` to
+`AnalyticsSecurityGroup` on tcp/5432. `analytics_allowed_cidr` is only for
+browser access to Superset on tcp/8088 and optional SSH when configured.
 
 If `analytics_key_name` is set, the stack also opens TCP 22 from
 `analytics_allowed_cidr` and attaches that EC2 key pair to the instance. If it
@@ -88,19 +111,21 @@ stops instead of deleting itself. The configured hour must be an integer from
 
 - Use `cdk synth` before deployment to inspect the generated template without
   creating resources.
-- `cdk deploy AnalyticsStack` creates billable AWS resources.
+- `cdk deploy NetworkStack AnalyticsStack` creates billable AWS resources,
+  including one NAT Gateway in `NetworkStack`.
 - Stop the EC2 instance when you are not using Superset.
 - Destroy `AnalyticsStack` after the demo if it is no longer needed.
 - A stopped EC2 instance can still have storage and public IP related costs.
-- Never leave `analytics_allowed_cidr=0.0.0.0/0` open longer than needed.
+- Never use `analytics_allowed_cidr=0.0.0.0/0` for normal demos.
 - Use your own `/32` public IP for demos whenever possible.
 
 Deploy with a restricted CIDR:
 
 ```bash
 cd infrastructure
+export DISCORD_WEBHOOK_URL='replace-with-discord-webhook-url'
 
-cdk deploy AnalyticsStack \
+cdk deploy NetworkStack AnalyticsStack \
   -c analytics_allowed_cidr=x.x.x.x/32 \
   -c analytics_instance_type=t3.micro \
   -c analytics_postgres_password='replace-me' \
@@ -113,11 +138,11 @@ Stop the instance after a demo:
 aws ec2 stop-instances --instance-ids INSTANCE_ID
 ```
 
-Destroy the stack after a demo:
+Destroy the stacks after a demo if no dependent pipeline stacks remain:
 
 ```bash
 cd infrastructure
-cdk destroy AnalyticsStack
+cdk destroy AnalyticsStack NetworkStack
 ```
 
 ## Access
@@ -125,7 +150,9 @@ cdk destroy AnalyticsStack
 After deployment, use the CloudFormation outputs:
 
 - `SupersetUrl`: open this URL in a browser.
-- `PostgresHost`: use this host for PostgreSQL clients.
+- `PostgresHost`: public DNS output for identifying the analytics host; do not
+  use it for pipeline Lambda database access.
+- `PostgresPrivateHost`: private host used by pipeline Lambda wiring.
 - `PostgresPort`: `5432`.
 
 Default Superset login values are:
@@ -140,13 +167,17 @@ PostgreSQL connection defaults are:
 - database: `social_analytics`
 - user: `superset`
 - password: `change-me`
-- host: `PostgresHost` output
+- host for Superset on the same EC2 host: `postgres`
+- host for pipeline Lambda: `PostgresPrivateHost`, wired through `app.py`
 - port: `5432`
 
 ## Loader Lambda Relationship
 
-This stack only hosts PostgreSQL and Superset. The existing
-`gold-to-postgres-loader` Lambda can be configured separately with PostgreSQL
-host, port, database, user, and password values, but this feature does not solve
-Lambda-to-EC2 networking. VPC placement, private routing, or more restrictive
-network access for the loader Lambda is handled in a later feature.
+`GoldStack` receives `analytics_stack.postgres_private_host` from `app.py`.
+That value becomes the deployed `POSTGRES_HOST` environment variable for
+`gold-to-postgres-loader`, so the loader connects over the shared VPC instead
+of requiring public PostgreSQL ingress.
+
+Do not add public tcp/5432 ingress from `0.0.0.0/0`. Lambda database access
+should rely on the `NetworkStack` security group rule:
+`PipelineLambdaSecurityGroup -> AnalyticsSecurityGroup` on tcp/5432.

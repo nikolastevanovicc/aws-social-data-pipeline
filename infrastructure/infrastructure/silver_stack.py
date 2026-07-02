@@ -4,6 +4,7 @@ from aws_cdk import (
     CfnOutput,
     Duration,
     Stack,
+    aws_ec2 as ec2,
     aws_iam as iam,
     aws_lambda as _lambda,
     aws_s3 as s3,
@@ -19,9 +20,14 @@ class SilverStack(Stack):
         construct_id: str,
         *,
         data_lake_bucket: s3.IBucket,
+        vpc: ec2.IVpc | None = None,
+        lambda_security_group: ec2.ISecurityGroup | None = None,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
+        lambda_network_config = self._lambda_network_config(
+            vpc, lambda_security_group
+        )
 
         silver_lambda_role = iam.Role(
             self,
@@ -106,6 +112,7 @@ class SilverStack(Stack):
             timeout=Duration.minutes(15),
             memory_size=1024,
             environment=silver_environment,
+            **lambda_network_config,
         )
 
         x_silver_lambda = _lambda.Function(
@@ -123,6 +130,7 @@ class SilverStack(Stack):
             timeout=Duration.minutes(10),
             memory_size=1024,
             environment=silver_environment,
+            **lambda_network_config,
         )
 
         CfnOutput(
@@ -135,3 +143,22 @@ class SilverStack(Stack):
             "NormalizeXSilverLambdaName",
             value=x_silver_lambda.function_name,
         )
+
+    def _lambda_network_config(
+        self,
+        vpc: ec2.IVpc | None,
+        lambda_security_group: ec2.ISecurityGroup | None,
+    ) -> dict:
+        if (vpc is None) != (lambda_security_group is None):
+            raise ValueError(
+                "vpc and lambda_security_group must be provided together."
+            )
+        if vpc is None or lambda_security_group is None:
+            return {}
+        return {
+            "vpc": vpc,
+            "vpc_subnets": ec2.SubnetSelection(
+                subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
+            ),
+            "security_groups": [lambda_security_group],
+        }

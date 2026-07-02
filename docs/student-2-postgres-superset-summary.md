@@ -22,6 +22,7 @@ gold S3 Parquet -> gold-to-postgres-loader Lambda -> PostgreSQL -> Superset dash
 - Local Docker Compose analytics environment.
 - Apache Superset visualization setup.
 - AWS CDK analytics EC2 stack for demo hosting.
+- Shared VPC networking for pipeline Lambda to PostgreSQL access.
 - Analytics SQL views for dashboard-friendly datasets.
 - Local demo data seeding and smoke-test scripts.
 - Cost-safety documentation and EC2 auto-stop guardrails.
@@ -59,13 +60,21 @@ Superset with Docker Compose. User data writes the Compose file, `.env`,
 `superset-init.sh`, `schema.sql`, and the custom Superset Dockerfile, then runs
 Docker Compose with `--build`.
 
+`NetworkStack` provides the shared VPC, public subnets, private subnets with
+egress, NAT Gateway, S3 Gateway Endpoint, `PipelineLambdaSecurityGroup`, and
+`AnalyticsSecurityGroup`. Pipeline Lambdas run in private subnets. PostgreSQL
+access is allowed only from `PipelineLambdaSecurityGroup` to
+`AnalyticsSecurityGroup` on tcp/5432. Superset tcp/8088 is restricted to
+`analytics_allowed_cidr`.
+
 ## Cost Safety Guardrails
 
 The analytics EC2 stack is intended for demos, not production. It defaults to a
-small instance, uses no NAT gateway, supports restricted inbound CIDR context,
-and can create a UTC cron job that stops the instance daily. Documentation
-emphasizes `cdk synth` for review and warns that `cdk deploy` creates billable
-resources.
+small instance, supports restricted inbound CIDR context, and can create a UTC
+cron job that stops the instance daily. Documentation emphasizes `cdk synth`
+for review and warns that `cdk deploy` creates billable resources. The shared
+VPC includes one NAT Gateway for private Lambda egress, which can create
+additional AWS cost while deployed.
 
 ## Analytics Views
 
@@ -112,8 +121,9 @@ docker compose -f docker/analytics/docker-compose.yml config
 docker compose -f docker/analytics/docker-compose.yml build superset
 
 cd infrastructure
-cdk synth AnalyticsStack \
-  -c analytics_allowed_cidr=0.0.0.0/0 \
+export DISCORD_WEBHOOK_URL='replace-with-discord-webhook-url'
+cdk synth NetworkStack AnalyticsStack \
+  -c analytics_allowed_cidr=203.0.113.10/32 \
   -c analytics_postgres_password=dummy \
   -c analytics_superset_secret_key=dummy \
   -c analytics_instance_type=t3.micro \
@@ -121,13 +131,12 @@ cdk synth AnalyticsStack \
   -c analytics_auto_stop_utc_hour=22
 
 cdk synth \
-  -c analytics_allowed_cidr=0.0.0.0/0 \
+  -c analytics_allowed_cidr=203.0.113.10/32 \
   -c analytics_postgres_password=dummy \
   -c analytics_superset_secret_key=dummy \
   -c analytics_instance_type=t3.micro \
   -c analytics_auto_stop_enabled=true \
   -c analytics_auto_stop_utc_hour=22 \
-  -c postgres_host=localhost \
   -c postgres_password=dummy
 ```
 
@@ -142,11 +151,13 @@ cdk synth \
 - Build charts for daily activity, top content, top users, hashtags, and data
   quality.
 - Capture screenshots for the final report.
-- For AWS demos, run `cdk synth` first and deploy only when the team is ready.
+- For AWS demos, run `cdk synth` first, set `analytics_allowed_cidr` to a real
+  `/32` public IP, and deploy only when the team is ready.
 
-## Known Limitation
+## Security Notes
 
 Actual AWS deploy and Lambda-to-EC2 networking should only be tested when the
-team is ready to avoid unexpected cost. The current AnalyticsStack hosts
-PostgreSQL and Superset, but production-grade Lambda networking, private
-routing, and hardened access controls are outside this Student 2 demo scope.
+team is ready to avoid unexpected cost. Do not use
+`analytics_allowed_cidr=0.0.0.0/0` as a Lambda-to-PostgreSQL workaround.
+PostgreSQL tcp/5432 should not be public; Lambda access should rely on the
+shared VPC security group rule.
