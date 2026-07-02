@@ -11,6 +11,7 @@ from aws_cdk import (
     Duration,
     ILocalBundling,
     Stack,
+    aws_ec2 as ec2,
     aws_iam as iam,
     aws_lambda as _lambda,
     aws_s3 as s3,
@@ -73,9 +74,15 @@ class GoldStack(Stack):
         construct_id: str,
         *,
         data_lake_bucket: s3.IBucket,
+        vpc: ec2.IVpc | None = None,
+        lambda_security_group: ec2.ISecurityGroup | None = None,
+        postgres_host: str | None = None,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
+        lambda_network_config = self._lambda_network_config(
+            vpc, lambda_security_group
+        )
 
         gold_lambda_role = iam.Role(
             self,
@@ -169,6 +176,7 @@ class GoldStack(Stack):
             timeout=Duration.minutes(10),
             memory_size=1024,
             environment=gold_environment,
+            **lambda_network_config,
         )
 
         x_gold_lambda = _lambda.Function(
@@ -186,6 +194,7 @@ class GoldStack(Stack):
             timeout=Duration.minutes(10),
             memory_size=1024,
             environment=gold_environment,
+            **lambda_network_config,
         )
 
         gold_to_postgres_loader_lambda = _lambda.Function(
@@ -214,9 +223,9 @@ class GoldStack(Stack):
             environment={
                 "DATA_LAKE_BUCKET": data_lake_bucket.bucket_name,
                 "GOLD_PREFIX": "gold",
-                "POSTGRES_HOST": context_or_env(
-                    "postgres_host", "POSTGRES_HOST", ""
-                ),
+                "POSTGRES_HOST": postgres_host
+                if postgres_host is not None
+                else context_or_env("postgres_host", "POSTGRES_HOST", ""),
                 "POSTGRES_PORT": context_or_env(
                     "postgres_port", "POSTGRES_PORT", "5432"
                 ),
@@ -232,6 +241,7 @@ class GoldStack(Stack):
                     "postgres_password", "POSTGRES_PASSWORD", ""
                 ),
             },
+            **lambda_network_config,
         )
         data_lake_bucket.grant_read(gold_to_postgres_loader_lambda, "gold/*")
 
@@ -250,3 +260,22 @@ class GoldStack(Stack):
             "GoldToPostgresLoaderFunctionName",
             value=gold_to_postgres_loader_lambda.function_name,
         )
+
+    def _lambda_network_config(
+        self,
+        vpc: ec2.IVpc | None,
+        lambda_security_group: ec2.ISecurityGroup | None,
+    ) -> dict:
+        if (vpc is None) != (lambda_security_group is None):
+            raise ValueError(
+                "vpc and lambda_security_group must be provided together."
+            )
+        if vpc is None or lambda_security_group is None:
+            return {}
+        return {
+            "vpc": vpc,
+            "vpc_subnets": ec2.SubnetSelection(
+                subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
+            ),
+            "security_groups": [lambda_security_group],
+        }
