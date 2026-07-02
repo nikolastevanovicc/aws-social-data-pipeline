@@ -4,17 +4,22 @@ This guide covers the gold layer deployment and runtime checks.
 
 ## Scope
 
-The CDK app is split into four stacks:
+The CDK app is split into these stacks:
 
 - `DataLakeStack`: S3 Data Lake bucket.
+- `NetworkStack`: shared VPC, private subnets with egress, NAT Gateway, S3
+  Gateway Endpoint, and shared security groups.
+- `AnalyticsStack`: PostgreSQL and Superset EC2 host in the shared VPC.
 - `BronzeStack`: Hacker News bronze ingestion Lambda and EventBridge schedule.
 - `SilverStack`: silver normalization Lambda resources.
 - `GoldStack`: gold aggregation Lambda resources.
+- `NotificationStack`: pipeline alerting resources.
 
 `GoldStack` adds two gold aggregation Lambda resources:
 
 - `build-hn-gold`
 - `build-x-gold`
+- `gold-to-postgres-loader`
 
 Both functions receive the same environment contract:
 
@@ -25,16 +30,22 @@ Both functions receive the same environment contract:
 - `X_GOLD_PREFIX=gold/x`
 
 The gold Lambda role can list the Data Lake bucket, read `silver/*`, and write
-`gold/*`. Both functions read silver Parquet datasets and write gold Parquet
-metrics back to S3.
+`gold/*`. Both aggregation functions read silver Parquet datasets and write
+gold Parquet metrics back to S3. The loader reads gold outputs and writes to
+PostgreSQL using the private host wired from `AnalyticsStack`.
 
 ## Local Checks
 
 ```bash
 cd infrastructure
 source .venv/bin/activate
+export DISCORD_WEBHOOK_URL='replace-with-discord-webhook-url'
 python -m pytest -q
-cdk synth
+cdk synth \
+  -c analytics_allowed_cidr=203.0.113.10/32 \
+  -c analytics_postgres_password=dummy \
+  -c analytics_superset_secret_key=dummy \
+  -c postgres_password=dummy
 ```
 
 If the JSII cache is not writable locally, run tests with:
@@ -48,14 +59,35 @@ JSII_RUNTIME_PACKAGE_CACHE=/private/tmp/jsii-cache python -m pytest -q
 ```bash
 cd infrastructure
 source .venv/bin/activate
-cdk deploy GoldStack --require-approval never
+export DISCORD_WEBHOOK_URL='replace-with-discord-webhook-url'
+cdk deploy GoldStack --require-approval never \
+  -c analytics_allowed_cidr=203.0.113.10/32 \
+  -c analytics_postgres_password=dummy \
+  -c analytics_superset_secret_key=dummy \
+  -c postgres_password=dummy
 ```
 
-If the dependent stacks are not deployed yet, deploy all stacks:
+If the dependent stacks are not deployed yet, deploy the full shared-VPC app:
 
 ```bash
-cdk deploy --all --require-approval never
+cdk deploy \
+  DataLakeStack \
+  NetworkStack \
+  AnalyticsStack \
+  BronzeStack \
+  SilverStack \
+  GoldStack \
+  NotificationStack \
+  --require-approval never \
+  -c analytics_allowed_cidr=203.0.113.10/32 \
+  -c analytics_postgres_password=dummy \
+  -c analytics_superset_secret_key=dummy \
+  -c postgres_password=dummy
 ```
+
+For demos, replace `203.0.113.10/32` with your own `/32` public IP. Do not use
+`analytics_allowed_cidr=0.0.0.0/0` for loader access; PostgreSQL access uses
+`PipelineLambdaSecurityGroup -> AnalyticsSecurityGroup` on tcp/5432.
 
 The deploy outputs include:
 

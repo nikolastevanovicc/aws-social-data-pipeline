@@ -4,10 +4,15 @@ This guide covers the silver layer infrastructure and runtime workflow.
 
 ## Scope
 
-The CDK app is split into three stacks:
+The CDK app is split into these stacks:
 - `DataLakeStack`: S3 Data Lake bucket
+- `NetworkStack`: shared VPC, private subnets with egress, NAT Gateway, S3
+  Gateway Endpoint, and shared security groups
+- `AnalyticsStack`: PostgreSQL and Superset EC2 host in the shared VPC
 - `BronzeStack`: Hacker News bronze ingestion Lambda and EventBridge schedule
 - `SilverStack`: silver normalization Lambda resources
+- `GoldStack`: gold aggregation and loader Lambda resources
+- `NotificationStack`: pipeline alerting resources
 
 `SilverStack` adds two silver normalization Lambda resources:
 - `normalize-hn-silver`
@@ -20,15 +25,22 @@ Both functions receive the same environment contract:
 - `SILVER_PREFIX=silver`
 - `DEFAULT_X_DATASET_NAME=x-synthetic-seed`
 
-The silver Lambda role can list the Data Lake bucket, read `bronze/*`, and write `silver/*`.
+The silver Lambda role can list the Data Lake bucket, read `bronze/*`, and write
+`silver/*`. In the deployed app, silver Lambdas run in the shared VPC private
+subnets with egress.
 
 ## Local Checks
 
 ```bash
 cd infrastructure
 source .venv/bin/activate
+export DISCORD_WEBHOOK_URL='replace-with-discord-webhook-url'
 python -m pytest -q
-cdk synth
+cdk synth \
+  -c analytics_allowed_cidr=203.0.113.10/32 \
+  -c analytics_postgres_password=dummy \
+  -c analytics_superset_secret_key=dummy \
+  -c postgres_password=dummy
 ```
 
 If the JSII cache is not writable locally, run tests with:
@@ -42,8 +54,24 @@ JSII_RUNTIME_PACKAGE_CACHE=/private/tmp/jsii-cache python -m pytest -q
 ```bash
 cd infrastructure
 source .venv/bin/activate
-cdk deploy --require-approval never
+export DISCORD_WEBHOOK_URL='replace-with-discord-webhook-url'
+cdk deploy \
+  DataLakeStack \
+  NetworkStack \
+  AnalyticsStack \
+  BronzeStack \
+  SilverStack \
+  GoldStack \
+  NotificationStack \
+  --require-approval never \
+  -c analytics_allowed_cidr=203.0.113.10/32 \
+  -c analytics_postgres_password=dummy \
+  -c analytics_superset_secret_key=dummy \
+  -c postgres_password=dummy
 ```
+
+For demos, replace `203.0.113.10/32` with your own `/32` public IP:
+`$(curl -s https://checkip.amazonaws.com)/32`.
 
 The deploy outputs include:
 - `DataLakeStack.DataLakeBucketName`
@@ -51,7 +79,10 @@ The deploy outputs include:
 - `SilverStack.NormalizeHnSilverLambdaName`
 - `SilverStack.NormalizeXSilverLambdaName`
 
-If an older monolithic `InfrastructureStack` is still deployed in AWS, coordinate cleanup before deploying this split-stack version. The repository now models the infrastructure as separate Data Lake, Bronze, and Silver stacks.
+If an older monolithic `InfrastructureStack` is still deployed in AWS,
+coordinate cleanup before deploying this split-stack version. The repository
+now models the infrastructure as separate Data Lake, Network, Analytics,
+Bronze, Silver, Gold, and Notification stacks.
 
 ## Manual Invoke
 

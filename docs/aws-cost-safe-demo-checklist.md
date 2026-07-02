@@ -7,7 +7,9 @@ pipeline. Do not deploy unless the demo needs live AWS infrastructure.
 
 - Run `cdk synth` first and inspect the generated resources.
 - Use `analytics_allowed_cidr` with your own `/32` public IP, not
-  `0.0.0.0/0`, unless a short-lived demo explicitly needs it.
+  `0.0.0.0/0`.
+- Remember that `NetworkStack` creates one NAT Gateway for private Lambda
+  egress. Destroy the demo stacks when they are no longer needed.
 - Prefer `analytics_instance_type=t3.micro` when Superset performance is
   acceptable.
 - Keep `analytics_auto_stop_enabled=true`.
@@ -22,6 +24,8 @@ pipeline. Do not deploy unless the demo needs live AWS infrastructure.
 - Confirm the instance ID and public IP match the `AnalyticsStack` outputs.
 - Avoid opening extra ports or changing the security group beyond the demo
   requirements.
+- Do not add public tcp/5432 ingress. PostgreSQL access should come from
+  `PipelineLambdaSecurityGroup` to `AnalyticsSecurityGroup`.
 - Take screenshots and export any demo evidence while the instance is running.
 
 ## After Demo
@@ -33,11 +37,12 @@ aws ec2 stop-instances --instance-ids INSTANCE_ID
 ```
 
 - Destroy `AnalyticsStack` after screenshots or the demo if it is no longer
-  needed:
+  needed. If the shared VPC is only for the demo, destroy the dependent stacks
+  and `NetworkStack` too:
 
 ```bash
 cd infrastructure
-cdk destroy AnalyticsStack
+cdk destroy NotificationStack GoldStack SilverStack BronzeStack AnalyticsStack NetworkStack DataLakeStack
 ```
 
 - Remember that stopped EC2 instances can still have storage and public IP

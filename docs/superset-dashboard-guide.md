@@ -43,9 +43,13 @@ the running container.
 
 ### EC2
 
-Use the `PostgresHost` CloudFormation output as the PostgreSQL host. The
-database name, username, and password should match the deployment context values
-used for the analytics stack.
+When using Superset on the analytics EC2 host, connect to PostgreSQL through
+the local Docker Compose service name `postgres`. The database name, username,
+and password should match the deployment context values used for the analytics
+stack.
+
+`PostgresPrivateHost` is for pipeline Lambda access through the shared VPC.
+Do not open PostgreSQL tcp/5432 publicly for the loader.
 
 ## Recommended Superset Datasets
 
