@@ -305,7 +305,7 @@ class AnalyticsStack(Stack):
             ),
             init=analytics_init,
             init_options=ec2.ApplyCloudFormationInitOptions(
-                ignore_failures=True,
+                ignore_failures=False,
                 print_log=True,
                 timeout=Duration.minutes(30),
             ),

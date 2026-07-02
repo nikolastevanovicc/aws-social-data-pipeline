@@ -481,8 +481,16 @@ def test_analytics_cloudformation_init_is_synthesized():
     assert "/opt/social-analytics/views.sql" in init_metadata
     assert "docker-compose-linux-${COMPOSE_ARCH}" in init_metadata
     assert "curl -fSL" in init_metadata
-    assert "cfn-signal -e 0" in user_data
+    assert "cfn-signal -e $?" in user_data
     assert init_metadata.index("< schema.sql") < init_metadata.index("< views.sql")
+
+
+def test_analytics_cloudformation_init_signals_failures():
+    analytics_template = _analytics_stack()
+    user_data = _analytics_instance_user_data(analytics_template)
+
+    assert "cfn-signal -e $?" in user_data
+    assert "cfn-signal -e 0" not in user_data
 
 
 def test_analytics_instance_has_ssm_managed_policy():
