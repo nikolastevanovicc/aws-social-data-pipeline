@@ -6,7 +6,7 @@ from infrastructure.bronze_stack import BronzeStack
 from infrastructure.data_lake_stack import DataLakeStack
 from infrastructure.gold_stack import GoldStack
 from infrastructure.silver_stack import SilverStack
-
+from infrastructure.notification_stack import NotificationStack
 
 app = cdk.App()
 data_lake_stack = DataLakeStack(app, "DataLakeStack")
@@ -26,5 +26,5 @@ GoldStack(
     "GoldStack",
     data_lake_bucket=data_lake_stack.data_lake_bucket,
 )
-
+NotificationStack(app, "NotificationStack")
 app.synth()
