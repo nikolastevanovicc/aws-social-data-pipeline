@@ -912,6 +912,38 @@ def test_networked_lambdas_use_pipeline_lambda_security_group():
         assert "PipelineLambdaSecurityGroup" in repr(security_group_ids)
 
 
+def test_networked_lambda_roles_include_vpc_access_managed_policy():
+    templates = _networked_pipeline_templates()
+
+    for stack_name, function_name in [
+        ("bronze", "hn-bronze-ingestion"),
+        ("silver", "normalize-hn-silver"),
+        ("silver", "normalize-x-silver"),
+        ("gold", "build-hn-gold"),
+        ("gold", "build-x-gold"),
+        ("gold", "gold-to-postgres-loader"),
+        ("notification", "pipeline-notification-handler"),
+    ]:
+        role = _lambda_execution_role(templates[stack_name], function_name)
+        managed_policy_arns = role["Properties"].get("ManagedPolicyArns", [])
+
+        assert "AWSLambdaVPCAccessExecutionRole" in repr(managed_policy_arns)
+
+
+def test_networked_lambda_roles_do_not_attach_amazon_ec2_full_access():
+    templates = _networked_pipeline_templates()
+
+    for stack_name in ["bronze", "silver", "gold", "notification"]:
+        template_json = templates[stack_name].to_json()
+
+        for resource in template_json["Resources"].values():
+            if resource["Type"] != "AWS::IAM::Role":
+                continue
+
+            managed_policy_arns = resource["Properties"].get("ManagedPolicyArns", [])
+            assert "AmazonEC2FullAccess" not in repr(managed_policy_arns)
+
+
 def test_notification_stack_requires_discord_webhook_url(monkeypatch):
     monkeypatch.delenv("DISCORD_WEBHOOK_URL", raising=False)
 
@@ -956,6 +988,17 @@ def _lambda_resource(template, function_name):
 
     assert len(matches) == 1
     return matches[0]
+
+
+def _lambda_execution_role(template, function_name):
+    template_json = template.to_json()
+    lambda_function = _lambda_resource(template, function_name)
+    role_arn = lambda_function["Properties"]["Role"]
+    role_logical_id = role_arn["Fn::GetAtt"][0]
+
+    role = template_json["Resources"][role_logical_id]
+    assert role["Type"] == "AWS::IAM::Role"
+    return role
 
 
 def _assert_lambda_uses_pipeline_network(template, function_name):

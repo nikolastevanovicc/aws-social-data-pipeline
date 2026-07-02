@@ -60,6 +60,7 @@ class NotificationStack(Stack):
                 "service-role/AWSLambdaBasicExecutionRole"
             )
         )
+        self._add_vpc_access_policy_if_needed(notification_lambda_role, vpc)
 
         notification_lambda = _lambda.Function(
             self,
@@ -148,3 +149,14 @@ class NotificationStack(Stack):
             ),
             "security_groups": [lambda_security_group],
         }
+
+    def _add_vpc_access_policy_if_needed(
+        self, role: iam.Role, vpc: ec2.IVpc | None
+    ) -> None:
+        if vpc is None:
+            return
+        role.add_managed_policy(
+            iam.ManagedPolicy.from_aws_managed_policy_name(
+                "service-role/AWSLambdaVPCAccessExecutionRole"
+            )
+        )
