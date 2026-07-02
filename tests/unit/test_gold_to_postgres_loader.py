@@ -1,4 +1,6 @@
 import importlib.util
+import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -446,6 +448,57 @@ def test_read_gold_dataset_rows(monkeypatch):
     }
 
 
+def test_read_gold_dataset_rows_marks_missing_files(monkeypatch):
+    def fake_read_parquet_rows_from_s3(s3_uri, partition_filter_values=None):
+        raise handler.MissingGoldDatasetFiles(s3_uri)
+
+    monkeypatch.setattr(
+        handler,
+        "read_parquet_rows_from_s3",
+        fake_read_parquet_rows_from_s3,
+    )
+
+    result = handler.read_gold_dataset_rows(
+        "bucket",
+        "gold",
+        "hacker-news",
+        "top_job_posts",
+        DATA_DATE,
+    )
+
+    assert result["postgres_table"] == "hn_top_job_posts"
+    assert result["s3_uri"] == "s3://bucket/gold/hacker-news/top_job_posts/"
+    assert result["rows"] == []
+    assert result["row_count"] == 0
+    assert result["missing_files"] is True
+
+
+def test_read_parquet_rows_from_s3_raises_missing_dataset_for_no_files(monkeypatch):
+    class NoFilesFound(Exception):
+        pass
+
+    class FakeS3:
+        def read_parquet(self, **_kwargs):
+            raise NoFilesFound("No files Found")
+
+    fake_wr = types.SimpleNamespace(
+        s3=FakeS3(),
+        exceptions=types.SimpleNamespace(NoFilesFound=NoFilesFound),
+    )
+    monkeypatch.setitem(sys.modules, "awswrangler", fake_wr)
+
+    with pytest.raises(handler.MissingGoldDatasetFiles):
+        handler.read_parquet_rows_from_s3(
+            "s3://bucket/gold/hacker-news/top_job_posts/",
+            {
+                "platform": "HackerNews",
+                "year": "2026",
+                "month": "05",
+                "day": "20",
+            },
+        )
+
+
 def test_read_requested_gold_datasets(monkeypatch):
     def fake_read_gold_dataset_rows(bucket, gold_prefix, platform, dataset_name, data_date):
         return {
@@ -483,6 +536,38 @@ def test_read_requested_gold_datasets(monkeypatch):
             }
         }
     }
+
+
+def test_read_requested_gold_datasets_preserves_missing_files_marker(monkeypatch):
+    def fake_read_gold_dataset_rows(bucket, gold_prefix, platform, dataset_name, data_date):
+        return {
+            "platform": platform,
+            "dataset_name": dataset_name,
+            "postgres_table": "hn_top_job_posts",
+            "s3_uri": f"s3://{bucket}/{gold_prefix}/{platform}/{dataset_name}/",
+            "partition_filter_values": {"data_date": data_date},
+            "rows": [],
+            "row_count": 0,
+            "missing_files": True,
+        }
+
+    monkeypatch.setattr(
+        handler,
+        "read_gold_dataset_rows",
+        fake_read_gold_dataset_rows,
+    )
+
+    result = handler.read_requested_gold_datasets(
+        "bucket",
+        "gold",
+        DATA_DATE,
+        ["hacker-news"],
+        ["top_job_posts"],
+    )
+
+    assert result["hacker-news"]["top_job_posts"]["row_count"] == 0
+    assert result["hacker-news"]["top_job_posts"]["rows"] == []
+    assert result["hacker-news"]["top_job_posts"]["missing_files"] is True
 
 
 def test_get_table_columns_x_daily_users_metric():
@@ -789,6 +874,102 @@ def test_lambda_handler(monkeypatch):
         "inserted_row_count": 2,
     }
     assert "rows" not in response["tables"]["x"]["daily_users_metric"]
+    assert connection.commits == 1
+    assert connection.closes == 1
+
+
+def test_lambda_handler_hn_default_datasets_skips_missing_top_job_posts(monkeypatch):
+    connection = FakeConnection()
+
+    def rows_for_dataset(dataset_name):
+        if dataset_name == "daily_item_counts":
+            return [
+                {
+                    "date": DATA_DATE,
+                    "platform": "HackerNews",
+                    "year": "2026",
+                    "month": "05",
+                    "day": "20",
+                    "gold_processed_at_utc": "2026-05-21T10:00:00Z",
+                    "story_count": 2,
+                    "ask_count": 0,
+                    "comment_count": 1,
+                    "job_count": 0,
+                    "poll_count": 0,
+                    "total_count": 3,
+                }
+            ]
+
+        return []
+
+    def fake_read_gold_dataset_rows(bucket, gold_prefix, platform, dataset_name, data_date):
+        assert platform == "hacker-news"
+        rows = rows_for_dataset(dataset_name)
+        missing_files = dataset_name == "top_job_posts"
+        return {
+            "platform": platform,
+            "dataset_name": dataset_name,
+            "postgres_table": handler.get_postgres_table_name(platform, dataset_name),
+            "s3_uri": f"s3://{bucket}/{gold_prefix}/{platform}/{dataset_name}/",
+            "partition_filter_values": handler.build_gold_partition_filter_values(
+                platform,
+                dataset_name,
+                data_date,
+            ),
+            "rows": rows,
+            "row_count": len(rows),
+            "missing_files": missing_files,
+        }
+
+    monkeypatch.setattr(
+        handler,
+        "read_gold_dataset_rows",
+        fake_read_gold_dataset_rows,
+    )
+    monkeypatch.setattr(
+        handler,
+        "resolve_postgres_options",
+        lambda event: {
+            "host": "db.example.com",
+            "port": 5432,
+            "database": "analytics",
+            "user": "loader",
+            "password": "secret",
+        },
+    )
+    monkeypatch.setattr(handler, "connect_to_postgres", lambda options: connection)
+
+    response = handler.lambda_handler(
+        {
+            "bucket": "bucket",
+            "gold_prefix": "gold",
+            "data_date": DATA_DATE,
+            "platforms": ["hacker-news"],
+            "mode": "replace_date",
+        },
+        FakeContext(),
+    )
+
+    top_job_result = response["tables"]["hacker-news"]["top_job_posts"]
+
+    assert top_job_result["postgres_table"] == "hn_top_job_posts"
+    assert top_job_result["loaded_row_count"] == 0
+    assert top_job_result["inserted_row_count"] == 0
+    assert top_job_result["missing_files"] is True
+    assert top_job_result["skipped"] is True
+    assert response["tables"]["hacker-news"]["daily_item_counts"][
+        "inserted_row_count"
+    ] == 1
+    assert (
+        "execute",
+        "DELETE FROM hn_top_job_posts WHERE date = %s AND platform = %s",
+        (DATA_DATE, "HackerNews"),
+    ) in connection.cursor_obj.calls
+    assert not any(
+        call[0] == "executemany"
+        and call[1] == handler.build_insert_sql("hn_top_job_posts")
+        for call in connection.cursor_obj.calls
+    )
     assert connection.commits == 1
     assert connection.closes == 1
 

@@ -293,7 +293,7 @@ def test_x_hashtag_trends_counts_tags_per_day():
     ]
 
 
-def test_hn_gold_reads_only_hacker_news_silver_partitions(monkeypatch):
+def test_hn_gold_reads_requested_hacker_news_silver_partition(monkeypatch):
     calls = []
 
     class FakeDataFrame:
@@ -308,13 +308,66 @@ def test_hn_gold_reads_only_hacker_news_silver_partitions(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "awswrangler", types.SimpleNamespace(s3=FakeS3()))
 
-    rows = hn_gold.read_silver_table("bucket-name", "silver", "users", "HackerNews")
+    rows = hn_gold.read_silver_table(
+        "bucket-name",
+        "silver",
+        "users",
+        "HackerNews",
+        data_date="2026-05-20",
+    )
 
     assert rows == []
-    assert calls[0]["path"] == "s3://bucket-name/silver/users/"
+    assert (
+        calls[0]["path"]
+        == "s3://bucket-name/silver/users/platform=HackerNews/year=2026/month=05/day=20/"
+    )
     assert calls[0]["dataset"] is True
-    assert calls[0]["partition_filter"]({"platform": "HackerNews"}) is True
-    assert calls[0]["partition_filter"]({"platform": "X"}) is False
+    assert "partition_filter" not in calls[0]
+
+
+def test_hn_gold_lambda_reads_only_requested_silver_partition_paths(monkeypatch):
+    calls = []
+
+    class FakeDataFrame:
+        def to_dict(self, orient):
+            assert orient == "records"
+            return []
+
+    class FakeS3:
+        def read_parquet(self, **kwargs):
+            calls.append(kwargs)
+            return FakeDataFrame()
+
+    monkeypatch.setitem(sys.modules, "awswrangler", types.SimpleNamespace(s3=FakeS3()))
+    monkeypatch.setattr(
+        hn_gold,
+        "write_hn_gold_tables",
+        lambda *_args, **_kwargs: {},
+    )
+
+    result = hn_gold.lambda_handler(
+        {
+            "bucket": "bucket-name",
+            "silver_prefix": "silver",
+            "gold_prefix": "gold/hacker-news",
+            "data_date": "2026-05-20",
+            "mode": "overwrite_partitions",
+        },
+        types.SimpleNamespace(aws_request_id="request-1"),
+    )
+
+    paths = [call["path"] for call in calls]
+
+    assert result["status"] == "success"
+    assert paths == [
+        "s3://bucket-name/silver/users/platform=HackerNews/year=2026/month=05/day=20/",
+        "s3://bucket-name/silver/posts/platform=HackerNews/year=2026/month=05/day=20/",
+        "s3://bucket-name/silver/post_tags/platform=HackerNews/year=2026/month=05/day=20/",
+        "s3://bucket-name/silver/post_relations/platform=HackerNews/year=2026/month=05/day=20/",
+        "s3://bucket-name/silver/data_quality_report/platform=HackerNews/data_date=2026-05-20/",
+    ]
+    assert "s3://bucket-name/silver/users/" not in paths
+    assert "s3://bucket-name/silver/posts/" not in paths
 
 
 def test_x_gold_reads_only_x_silver_partitions(monkeypatch):
