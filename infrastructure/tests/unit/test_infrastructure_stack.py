@@ -10,6 +10,7 @@ from infrastructure.analytics_stack import AnalyticsStack
 from infrastructure.bronze_stack import BronzeStack
 from infrastructure.data_lake_stack import DataLakeStack
 from infrastructure.gold_stack import GoldStack
+from infrastructure.notification_stack import NotificationStack
 from infrastructure.silver_stack import SilverStack
 
 
@@ -57,6 +58,12 @@ def _analytics_template(context=None):
     app = core.App(context=default_context)
     analytics_stack = AnalyticsStack(app, "analytics")
     return assertions.Template.from_stack(analytics_stack)
+
+
+def _notification_template(context=None):
+    app = core.App(context=context or {})
+    notification_stack = NotificationStack(app, "notification")
+    return assertions.Template.from_stack(notification_stack)
 
 
 def _all_templates():
@@ -474,8 +481,16 @@ def test_analytics_cloudformation_init_is_synthesized():
     assert "/opt/social-analytics/views.sql" in init_metadata
     assert "docker-compose-linux-${COMPOSE_ARCH}" in init_metadata
     assert "curl -fSL" in init_metadata
-    assert "cfn-signal -e 0" in user_data
+    assert "cfn-signal -e $?" in user_data
     assert init_metadata.index("< schema.sql") < init_metadata.index("< views.sql")
+
+
+def test_analytics_cloudformation_init_signals_failures():
+    analytics_template = _analytics_stack()
+    user_data = _analytics_instance_user_data(analytics_template)
+
+    assert "cfn-signal -e $?" in user_data
+    assert "cfn-signal -e 0" not in user_data
 
 
 def test_analytics_instance_has_ssm_managed_policy():
@@ -511,6 +526,55 @@ def test_analytics_auto_stop_can_be_disabled():
 def test_analytics_invalid_auto_stop_hour_raises_value_error():
     with pytest.raises(ValueError, match="between 0 and 23"):
         _analytics_template({"analytics_auto_stop_utc_hour": "24"})
+
+
+def test_notification_stack_synthesizes_with_discord_webhook_context(monkeypatch):
+    monkeypatch.delenv("DISCORD_WEBHOOK_URL", raising=False)
+
+    notification_template = _notification_template(
+        {"discord_webhook_url": "https://example.com/discord-context"}
+    )
+
+    notification_template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "FunctionName": "pipeline-notification-handler",
+            "Environment": {
+                "Variables": {
+                    "DISCORD_WEBHOOK_URL": "https://example.com/discord-context"
+                }
+            },
+        },
+    )
+
+
+def test_notification_stack_synthesizes_with_discord_webhook_env(monkeypatch):
+    monkeypatch.setenv("DISCORD_WEBHOOK_URL", "https://example.com/discord-env")
+
+    notification_template = _notification_template()
+
+    notification_template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "FunctionName": "pipeline-notification-handler",
+            "Environment": {
+                "Variables": {
+                    "DISCORD_WEBHOOK_URL": "https://example.com/discord-env"
+                }
+            },
+        },
+    )
+
+
+def test_notification_stack_requires_discord_webhook_url(monkeypatch):
+    monkeypatch.delenv("DISCORD_WEBHOOK_URL", raising=False)
+
+    with pytest.raises(ValueError) as error:
+        _notification_template()
+
+    message = str(error.value)
+    assert "-c discord_webhook_url=..." in message
+    assert "DISCORD_WEBHOOK_URL" in message
 
 
 def _analytics_instance_user_data(analytics_template):

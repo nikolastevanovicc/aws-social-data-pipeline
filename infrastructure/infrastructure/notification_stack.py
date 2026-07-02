@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from aws_cdk import (
@@ -19,11 +20,14 @@ class NotificationStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        discord_webhook_url = self.node.try_get_context("discord_webhook_url")
+        discord_webhook_url = self.node.try_get_context(
+            "discord_webhook_url"
+        ) or os.getenv("DISCORD_WEBHOOK_URL")
 
         if not discord_webhook_url:
             raise ValueError(
-                "Missing CDK context value: discord_webhook_url"
+                "Missing Discord webhook URL. Provide it with "
+                "-c discord_webhook_url=... or DISCORD_WEBHOOK_URL."
             )
 
         alerts_topic = sns.Topic(
