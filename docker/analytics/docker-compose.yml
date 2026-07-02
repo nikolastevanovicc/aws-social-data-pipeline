@@ -23,8 +23,7 @@ services:
       dockerfile: Dockerfile
     image: social-analytics-superset:local
     env_file:
-      - path: .env
-        required: false
+      - .env
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-social_analytics}
       POSTGRES_USER: ${POSTGRES_USER:-superset}

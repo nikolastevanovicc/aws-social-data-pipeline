@@ -10,6 +10,7 @@ from infrastructure.analytics_stack import AnalyticsStack
 from infrastructure.bronze_stack import BronzeStack
 from infrastructure.data_lake_stack import DataLakeStack
 from infrastructure.gold_stack import GoldStack
+from infrastructure.notification_stack import NotificationStack
 from infrastructure.silver_stack import SilverStack
 
 
@@ -57,6 +58,12 @@ def _analytics_template(context=None):
     app = core.App(context=default_context)
     analytics_stack = AnalyticsStack(app, "analytics")
     return assertions.Template.from_stack(analytics_stack)
+
+
+def _notification_template(context=None):
+    app = core.App(context=context or {})
+    notification_stack = NotificationStack(app, "notification")
+    return assertions.Template.from_stack(notification_stack)
 
 
 def _all_templates():
@@ -459,37 +466,49 @@ def test_analytics_outputs_are_synthesized():
         )
 
 
-def test_analytics_user_data_is_synthesized():
+def test_analytics_cloudformation_init_is_synthesized():
     analytics_template = _analytics_stack()
-    template_json = analytics_template.to_json()
+    user_data = _analytics_instance_user_data(analytics_template)
+    init_metadata = _analytics_instance_init_metadata(analytics_template)
 
-    instances = [
-        resource
-        for resource in template_json["Resources"].values()
-        if resource["Type"] == "AWS::EC2::Instance"
-    ]
-
-    assert len(instances) == 1
-    user_data = repr(instances[0]["Properties"].get("UserData"))
-    assert "docker compose up -d --build" in user_data
-    assert "social-analytics-postgres" in user_data
-    assert "superset/Dockerfile" in user_data
-    assert "psycopg2-binary" in user_data
-    assert "schema.sql" in user_data
-    assert "views.sql" in user_data
-    assert user_data.index("< schema.sql") < user_data.index("< views.sql")
+    assert "cfn-init" in user_data
+    assert "docker compose up -d --build" not in user_data
+    assert "docker compose up -d --build" in init_metadata
+    assert "social-analytics-postgres" in init_metadata
+    assert "/opt/social-analytics/superset/Dockerfile" in init_metadata
+    assert "psycopg2-binary" in init_metadata
+    assert "/opt/social-analytics/schema.sql" in init_metadata
+    assert "/opt/social-analytics/views.sql" in init_metadata
+    assert "docker-compose-linux-${COMPOSE_ARCH}" in init_metadata
+    assert "curl -fSL" in init_metadata
+    assert "cfn-signal -e $?" in user_data
+    assert init_metadata.index("< schema.sql") < init_metadata.index("< views.sql")
 
 
-def test_analytics_user_data_contains_default_shutdown_cron():
+def test_analytics_cloudformation_init_signals_failures():
     analytics_template = _analytics_stack()
     user_data = _analytics_instance_user_data(analytics_template)
 
-    assert "Demo cost guardrail" in user_data
-    assert "social-analytics-auto-stop" in user_data
-    assert "/sbin/shutdown -h now" in user_data
-    assert "0 22 * * * root" in user_data
-    assert "docker compose pull postgres" in user_data
-    assert user_data.index("social-analytics-auto-stop") < user_data.index(
+    assert "cfn-signal -e $?" in user_data
+    assert "cfn-signal -e 0" not in user_data
+
+
+def test_analytics_instance_has_ssm_managed_policy():
+    analytics_template = _analytics_stack()
+
+    assert "AmazonSSMManagedInstanceCore" in repr(analytics_template.to_json())
+
+
+def test_analytics_cloudformation_init_contains_default_shutdown_cron():
+    analytics_template = _analytics_stack()
+    init_metadata = _analytics_instance_init_metadata(analytics_template)
+
+    assert "Demo cost guardrail" in init_metadata
+    assert "social-analytics-auto-stop" in init_metadata
+    assert "/sbin/shutdown -h now" in init_metadata
+    assert "0 22 * * * root" in init_metadata
+    assert "docker compose pull postgres" in init_metadata
+    assert init_metadata.index("social-analytics-auto-stop") < init_metadata.index(
         "docker compose pull postgres"
     )
 
@@ -497,10 +516,10 @@ def test_analytics_user_data_contains_default_shutdown_cron():
 def test_analytics_auto_stop_can_be_disabled():
     analytics_template = _analytics_template({"analytics_auto_stop_enabled": "false"})
     template_json = analytics_template.to_json()
-    user_data = _analytics_instance_user_data(analytics_template)
+    init_metadata = _analytics_instance_init_metadata(analytics_template)
 
-    assert "social-analytics-auto-stop" not in user_data
-    assert "/sbin/shutdown -h now" not in user_data
+    assert "social-analytics-auto-stop" not in init_metadata
+    assert "/sbin/shutdown -h now" not in init_metadata
     assert "AnalyticsAutoStopUtcHour" not in template_json.get("Outputs", {})
 
 
@@ -509,7 +528,66 @@ def test_analytics_invalid_auto_stop_hour_raises_value_error():
         _analytics_template({"analytics_auto_stop_utc_hour": "24"})
 
 
+def test_notification_stack_synthesizes_with_discord_webhook_context(monkeypatch):
+    monkeypatch.delenv("DISCORD_WEBHOOK_URL", raising=False)
+
+    notification_template = _notification_template(
+        {"discord_webhook_url": "https://example.com/discord-context"}
+    )
+
+    notification_template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "FunctionName": "pipeline-notification-handler",
+            "Environment": {
+                "Variables": {
+                    "DISCORD_WEBHOOK_URL": "https://example.com/discord-context"
+                }
+            },
+        },
+    )
+
+
+def test_notification_stack_synthesizes_with_discord_webhook_env(monkeypatch):
+    monkeypatch.setenv("DISCORD_WEBHOOK_URL", "https://example.com/discord-env")
+
+    notification_template = _notification_template()
+
+    notification_template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "FunctionName": "pipeline-notification-handler",
+            "Environment": {
+                "Variables": {
+                    "DISCORD_WEBHOOK_URL": "https://example.com/discord-env"
+                }
+            },
+        },
+    )
+
+
+def test_notification_stack_requires_discord_webhook_url(monkeypatch):
+    monkeypatch.delenv("DISCORD_WEBHOOK_URL", raising=False)
+
+    with pytest.raises(ValueError) as error:
+        _notification_template()
+
+    message = str(error.value)
+    assert "-c discord_webhook_url=..." in message
+    assert "DISCORD_WEBHOOK_URL" in message
+
+
 def _analytics_instance_user_data(analytics_template):
+    instance = _analytics_instance(analytics_template)
+    return repr(instance["Properties"].get("UserData"))
+
+
+def _analytics_instance_init_metadata(analytics_template):
+    instance = _analytics_instance(analytics_template)
+    return repr(instance["Metadata"].get("AWS::CloudFormation::Init"))
+
+
+def _analytics_instance(analytics_template):
     template_json = analytics_template.to_json()
     instances = [
         resource
@@ -518,7 +596,7 @@ def _analytics_instance_user_data(analytics_template):
     ]
 
     assert len(instances) == 1
-    return repr(instances[0]["Properties"].get("UserData"))
+    return instances[0]
 
 
 def _as_list(value):

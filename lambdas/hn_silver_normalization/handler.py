@@ -123,16 +123,15 @@ def utc_today() -> str:
     return dt.datetime.now(dt.timezone.utc).date().isoformat()
 
 
+def utc_yesterday() -> str:
+    return (dt.datetime.now(dt.timezone.utc).date() - dt.timedelta(days=1)).isoformat()
+
+
 def resolve_hn_processing_options(event: dict) -> dict:
     event = event if isinstance(event, dict) else {}
 
-    data_date = event.get("data_date")
-    if not data_date:
-        data_date = utc_today()
-
-    ingest_date = event.get("ingest_date")
-    if not ingest_date:
-        ingest_date = data_date
+    data_date = event.get("data_date") or utc_yesterday()
+    ingest_date = event.get("ingest_date") or utc_today()
 
     return {
         "bucket": event.get("bucket") or os.getenv("DATA_LAKE_BUCKET"),
