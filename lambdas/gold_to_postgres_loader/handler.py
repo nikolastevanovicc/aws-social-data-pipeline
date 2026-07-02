@@ -323,7 +323,7 @@ def build_gold_s3_prefix(gold_prefix, platform, dataset_name, data_date):
     normalized_gold_prefix = (gold_prefix or "").strip("/")
     prefix_parts = [
         part.strip("/")
-        for part in (normalized_gold_prefix, platform, dataset_name)
+        for part in (normalized_gold_prefix, dataset_name)
         if part and part.strip("/")
     ]
     return "/".join(prefix_parts) + "/"
